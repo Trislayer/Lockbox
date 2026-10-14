@@ -44,6 +44,7 @@ static int Run(string[] args)
             return 0;
         case "version" or "--version":
             Console.WriteLine($"lockbox {Assembly.GetExecutingAssembly().GetName().Version?.ToString(3)}");
+            Console.WriteLine("Includes the BIP39 English wordlist (MIT License); see THIRD-PARTY-NOTICES.md.");
             return 0;
         default:
             Console.Error.WriteLine($"lockbox: unknown command '{args[0]}'. Try 'lockbox help'.");

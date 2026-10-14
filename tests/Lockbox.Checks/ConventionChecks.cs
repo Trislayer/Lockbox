@@ -19,6 +19,28 @@ internal static class ConventionChecks
         NoPackageReferences(root);
         InHouseCryptoIsConfined(root);
         EveryCheckClassIsProvenAndRun(root);
+        EveryEmbeddedResourceIsCredited(root);
+    }
+
+    /// <summary>
+    /// Every file under a project's Resources/ folder is third-party or data content that ships
+    /// inside the executables, so THIRD-PARTY-NOTICES.md names it and the build copies that
+    /// notice beside each executable.
+    /// </summary>
+    private static void EveryEmbeddedResourceIsCredited(string root)
+    {
+        Checks.Section("Conventions - shipped third-party content is credited");
+        var notices = File.ReadAllText(Path.Combine(root, "THIRD-PARTY-NOTICES.md"));
+        var uncredited = new List<string>();
+        foreach (var file in Corpus(root, "*", Path.Combine("src", "Lockbox.Core", "Resources")))
+            if (!notices.Contains(Path.GetFileName(file), StringComparison.Ordinal))
+                uncredited.Add(Relative(root, file));
+        Report(uncredited, "THIRD-PARTY-NOTICES.md names every embedded resource",
+            "add a section to THIRD-PARTY-NOTICES.md with the file's source, author and license text");
+
+        var targets = File.ReadAllText(Path.Combine(root, "Directory.Build.targets"));
+        Checks.Is(targets.Contains("THIRD-PARTY-NOTICES.md", StringComparison.Ordinal) && targets.Contains("CopyToPublishDirectory", StringComparison.Ordinal),
+            "Directory.Build.targets copies THIRD-PARTY-NOTICES.md into every executable's publish output");
     }
 
     /// <summary>

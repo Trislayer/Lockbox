@@ -1,0 +1,11 @@
+<Project>
+
+  <!-- The executables embed third-party content (the BIP39 wordlist, MIT), so its notice
+       ships beside them in every build and publish output. A .targets file because each
+       project's OutputType is only known after Directory.Build.props has been read. -->
+  <ItemGroup Condition="'$(OutputType)' == 'Exe'">
+    <None Include="$(MSBuildThisFileDirectory)THIRD-PARTY-NOTICES.md" Link="THIRD-PARTY-NOTICES.md"
+          CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

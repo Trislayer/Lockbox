@@ -30,6 +30,9 @@ Set `LOCKBOX_VAULT` / `LOCKBOX_KEYFILE` to skip the paths. In a `lockbox open` s
 `save`, `reload`, `passwd`, `info`, `quit`. `lockbox-ui` prints a single-use link and opens
 the browser; press `L` in its terminal for a new link, `Q` to lock and quit.
 
+Third-party content: the BIP39 English wordlist (MIT), credited in
+[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md), which is copied next to every built executable.
+
 ## Build
 
 ```text

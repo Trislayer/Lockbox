@@ -24,6 +24,6 @@ internal static class Proofs
         [nameof(ConventionChecks)] =
             "A planted violation per lint (`!`, NoWarn in a csproj, #nullable disable, JSON options without " +
             "Respect*, a PackageReference, a crypto type used outside Crypto/ and VaultFormat.cs, an unregistered " +
-            "check class): each lint red.",
+            "check class, an uncredited file in Resources/): each lint red.",
     };
 }
