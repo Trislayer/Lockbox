@@ -71,15 +71,28 @@ public sealed class VaultSession : IDisposable
     {
         using var stream = File.OpenRead(path);
         var buffer = new byte[VaultFormat.HeaderLength + VaultFormat.TagSize];
-        stream.ReadExactly(buffer);
-        return VaultFormat.ReadHeader(buffer);
+        var read = stream.ReadAtLeast(buffer, buffer.Length, throwOnEndOfStream: false);
+        return Named(path, () => VaultFormat.ReadHeader(buffer.AsSpan(0, read)));
     }
 
     public static VaultSession Open(string path, string password, byte[]? keyFileDigest)
     {
         var bytes = File.ReadAllBytes(path);
-        var (keys, document) = VaultFormat.Unseal(bytes, password, keyFileDigest);
+        var (keys, document) = Named(path, () => VaultFormat.Unseal(bytes, password, keyFileDigest));
         return new VaultSession(path, keys, document, SHA256.HashData(bytes));
+    }
+
+    /// <summary>Format errors name the file they are about.</summary>
+    private static T Named<T>(string path, Func<T> read)
+    {
+        try
+        {
+            return read();
+        }
+        catch (VaultFormatException e)
+        {
+            throw new VaultFormatException($"{System.IO.Path.GetFullPath(path)}: {e.Message}");
+        }
     }
 
     public void MarkDirty()

@@ -40,7 +40,7 @@ static int Run(string[] args)
         case "keyfile":
             return CreateKeyFile(options);
         case "gen":
-            Console.WriteLine(Generate(options));
+            Console.WriteLine(options.GeneratedSecret());
             return 0;
         case "version" or "--version":
             Console.WriteLine($"lockbox {Assembly.GetExecutingAssembly().GetName().Version?.ToString(3)}");
@@ -117,14 +117,6 @@ static int CreateKeyFile(Options options)
     KeyFile.Create(path);
     Console.WriteLine($"Created {Path.GetFullPath(path)}. Keep it off the cloud folder, and back it up.");
     return 0;
-}
-
-static string Generate(Options options)
-{
-    if (options.Value("--words") is { } words)
-        return PasswordGenerator.GeneratePassphrase(int.Parse(words));
-    var length = options.Positional.FirstOrDefault() is { } l ? int.Parse(l) : 32;
-    return PasswordGenerator.Generate(length, symbols: !options.Has("--no-symbols"));
 }
 
 static string Quote(string path) => path.Contains(' ') ? $"\"{path}\"" : path;

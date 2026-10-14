@@ -61,6 +61,23 @@ internal sealed class Options
         return parts;
     }
 
+    /// <summary>
+    /// <c>gen [length] [--no-symbols] [--words N]</c>, shared by the command line and the session.
+    /// </summary>
+    public string GeneratedSecret()
+    {
+        if (Value("--words") is { } words)
+            return Core.PasswordGenerator.GeneratePassphrase(WholeNumber(words, "--words", 1, 64));
+        var length = Positional.FirstOrDefault() is { } l ? WholeNumber(l, "password length", 8, 1024) : 32;
+        return Core.PasswordGenerator.Generate(length, symbols: !Has("--no-symbols"));
+    }
+
+    /// <summary>Parse a number the user typed; the error names the value and the accepted range.</summary>
+    public static int WholeNumber(string text, string what, int min, int max) =>
+        int.TryParse(text.Trim(), out var n) && n >= min && n <= max
+            ? n
+            : throw new ArgumentException($"'{text}' is not a valid {what}: give a whole number from {min} to {max}.");
+
     public string? Value(string name) => _values.GetValueOrDefault(name);
     public bool Has(string flag) => _flags.Contains(flag);
 

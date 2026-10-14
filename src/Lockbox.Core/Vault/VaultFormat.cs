@@ -63,8 +63,10 @@ public static class VaultFormat
 
     public static HeaderInfo ReadHeader(ReadOnlySpan<byte> file)
     {
-        if (file.Length < HeaderLength + TagSize || !file[..4].SequenceEqual(Magic))
-            throw new VaultFormatException("Not a Lockbox vault.");
+        if (file.Length < HeaderLength + TagSize)
+            throw new VaultFormatException($"Not a Lockbox vault: {file.Length} bytes is shorter than the smallest vault ({HeaderLength + TagSize}).");
+        if (!file[..4].SequenceEqual(Magic))
+            throw new VaultFormatException($"Not a Lockbox vault: it starts with 0x{Convert.ToHexString(file[..4])}, not \"LKBX\".");
         var version = BinaryPrimitives.ReadUInt16LittleEndian(file[4..]);
         if (version != FormatVersion)
             throw new VaultFormatException($"Vault format version {version} is not supported by this build (expected {FormatVersion}).");

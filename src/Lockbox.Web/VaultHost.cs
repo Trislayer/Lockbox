@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Security.Cryptography;
 using Lockbox.Core;
 using Lockbox.Core.Vault;
@@ -22,7 +23,8 @@ internal sealed class VaultHost : IDisposable
     private Timer? _clipboardTimer;
     private VaultSession? _vault;
     private byte[]? _keyFileDigest;
-    private DateTime _lastActivity = DateTime.UtcNow;
+    // Stopwatch timestamps, not wall-clock times: a clock adjustment must not lock early or never.
+    private long _lastActivity = Stopwatch.GetTimestamp();
     private string? _message;
 
     public VaultHost(string? defaultVaultPath, string? defaultKeyFilePath)
@@ -38,7 +40,7 @@ internal sealed class VaultHost : IDisposable
     /// <summary>Called for every API request except state polling, which must not keep the vault awake.</summary>
     public void Touch()
     {
-        lock (_gate) _lastActivity = DateTime.UtcNow;
+        lock (_gate) _lastActivity = Stopwatch.GetTimestamp();
     }
 
     public StateResponse State()
@@ -102,13 +104,20 @@ internal sealed class VaultHost : IDisposable
     {
         lock (_gate)
         {
-            SecureClipboard.ClearIfOurs();
             _vault?.Dispose();
             _vault = null;
             if (_keyFileDigest is not null) CryptographicOperations.ZeroMemory(_keyFileDigest);
             _keyFileDigest = null;
             _message = message;
+            ClearClipboardLocked();
         }
+    }
+
+    /// <summary>Clear the clipboard; a failure is queued for the page's next status poll. Caller holds _gate.</summary>
+    private void ClearClipboardLocked()
+    {
+        if (SecureClipboard.WarningFor(SecureClipboard.ClearIfOurs()) is { } warning)
+            _message = _message is null ? warning : $"{_message} {warning}";
     }
 
     public void Save(bool force)
@@ -226,20 +235,27 @@ internal sealed class VaultHost : IDisposable
                 "username" => entry.Username,
                 "url" => entry.Url,
                 "password" => entry.Password,
-                _ => throw new ArgumentException("Copy password, username or url."),
+                _ => throw new ArgumentException($"'{field}' cannot be copied: use password, username or url."),
             };
         }
         if (value.Length == 0) throw new ArgumentException($"This entry has no {field}.");
         if (!SecureClipboard.TryCopy(value, out var error)) throw new InvalidOperationException($"Could not use the clipboard: {error}");
-        _clipboardTimer?.Dispose();
-        _clipboardTimer = new Timer(_ => SecureClipboard.ClearIfOurs(), null, ClipboardLifetime, Timeout.InfiniteTimeSpan);
+        lock (_gate)
+        {
+            // Swapped under the lock so two quick copies cannot leave an orphaned timer running.
+            _clipboardTimer?.Dispose();
+            _clipboardTimer = new Timer(_ => { lock (_gate) ClearClipboardLocked(); }, null, ClipboardLifetime, Timeout.InfiniteTimeSpan);
+        }
         return $"Copied {field}. The clipboard is cleared in {ClipboardLifetime.TotalSeconds:0} seconds.";
     }
 
     public void Dispose()
     {
         _idleTimer.Dispose();
-        _clipboardTimer?.Dispose();
+        lock (_gate) _clipboardTimer?.Dispose();
+        // Nobody polls after shutdown, so a clipboard failure goes to the terminal.
+        if (SecureClipboard.WarningFor(SecureClipboard.ClearIfOurs()) is { } warning)
+            Console.WriteLine(warning);
         Lock();
     }
 
@@ -247,7 +263,7 @@ internal sealed class VaultHost : IDisposable
     {
         lock (_gate)
         {
-            if (_vault is null || _vault.IsDirty || DateTime.UtcNow - _lastActivity < IdleLock) return;
+            if (_vault is null || _vault.IsDirty || Stopwatch.GetElapsedTime(_lastActivity) < IdleLock) return;
         }
         Lock($"Locked after {IdleLock.TotalMinutes:0} minutes without activity.");
     }
@@ -260,7 +276,7 @@ internal sealed class VaultHost : IDisposable
             if (_keyFileDigest is not null && !ReferenceEquals(_keyFileDigest, digest)) CryptographicOperations.ZeroMemory(_keyFileDigest);
             _vault = vault;
             _keyFileDigest = digest;
-            _lastActivity = DateTime.UtcNow;
+            _lastActivity = Stopwatch.GetTimestamp();
             _message = null;
         }
     }

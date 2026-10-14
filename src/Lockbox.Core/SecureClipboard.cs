@@ -13,6 +13,17 @@ namespace Lockbox.Core;
 /// "CanIncludeInClipboardHistory" = 0, "CanUploadToCloudClipboard" = 0). On macOS it uses
 /// pbcopy/pbpaste; on Linux wl-copy/wl-paste (Wayland), then xclip, then xsel.
 /// </remarks>
+public enum ClipboardClearOutcome
+{
+    /// <summary>Nothing was copied since the last clear.</summary>
+    NothingToClear,
+    Cleared,
+    /// <summary>The clipboard holds something newer than Lockbox's copy, so it was left alone.</summary>
+    ChangedSinceCopy,
+    /// <summary>The clipboard could not be read or cleared: it may still hold the secret.</summary>
+    Failed,
+}
+
 public static partial class SecureClipboard
 {
     private static readonly Lock s_gate = new();
@@ -47,34 +58,53 @@ public static partial class SecureClipboard
         }
     }
 
-    /// <summary>Clear the clipboard if it still holds the last thing <see cref="TryCopy"/> put there.</summary>
-    public static void ClearIfOurs()
+    /// <summary>
+    /// Clear the clipboard if it still holds the last thing <see cref="TryCopy"/> put there.
+    /// <see cref="ClipboardClearOutcome.Failed"/> means the secret may still be there; callers
+    /// tell the user. After a failure the next call tries again.
+    /// </summary>
+    public static ClipboardClearOutcome ClearIfOurs()
     {
         lock (s_gate)
         {
-            if (s_lastCopied is null) return;
+            if (s_lastCopied is null) return ClipboardClearOutcome.NothingToClear;
             try
             {
+                ClipboardClearOutcome outcome;
                 if (OperatingSystem.IsWindows())
                 {
-                    if (Windows.GetClipboardSequenceNumber() == s_windowsSequence)
+                    if (Windows.GetClipboardSequenceNumber() != s_windowsSequence)
+                        outcome = ClipboardClearOutcome.ChangedSinceCopy;
+                    else
+                    {
                         Windows.Clear();
+                        outcome = ClipboardClearOutcome.Cleared;
+                    }
                 }
-                else if (Unix.GetText() == s_lastCopied)
+                else if (Unix.GetText() != s_lastCopied)
+                {
+                    outcome = ClipboardClearOutcome.ChangedSinceCopy;
+                }
+                else
                 {
                     Unix.SetText("");
+                    outcome = ClipboardClearOutcome.Cleared;
                 }
+                s_lastCopied = null;
+                return outcome;
             }
             catch
             {
-                // Best effort: the clipboard may be held by another process at this moment.
-            }
-            finally
-            {
-                s_lastCopied = null;
+                // Typically another process holding the clipboard at this moment.
+                return ClipboardClearOutcome.Failed;
             }
         }
     }
+
+    /// <summary>The warning to show for <see cref="ClipboardClearOutcome.Failed"/>, or null.</summary>
+    public static string? WarningFor(ClipboardClearOutcome outcome) => outcome == ClipboardClearOutcome.Failed
+        ? "Could not clear the clipboard - it may still hold a password. Copy something else over it."
+        : null;
 
     private static partial class Windows
     {

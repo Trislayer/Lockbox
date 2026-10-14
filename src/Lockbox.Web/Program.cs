@@ -17,7 +17,13 @@ for (var i = 0; i < args.Length; i++)
     switch (args[i])
     {
         case "--keyfile" when i + 1 < args.Length: keyFileArg = args[++i]; break;
-        case "--port" when i + 1 < args.Length: port = int.Parse(args[++i]); break;
+        case "--port" when i + 1 < args.Length:
+            if (!int.TryParse(args[++i], out port) || port is < 0 or > 65535)
+            {
+                Console.Error.WriteLine($"lockbox-ui: '{args[i]}' is not a valid --port: give a whole number from 0 (any free port) to 65535.");
+                return 1;
+            }
+            break;
         case "--no-browser": openBrowser = false; break;
         case "-h" or "--help":
             Console.WriteLine("lockbox-ui [vault.lbx] [--keyfile <path>] [--port N] [--no-browser]");

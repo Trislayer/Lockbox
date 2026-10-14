@@ -61,10 +61,16 @@ internal sealed class Shell(VaultSession vault, byte[]? keyFileDigest)
             Console.CancelKeyPress -= OnCancel;
             _idleTimer?.Dispose();
             _clipboardTimer?.Dispose();
-            SecureClipboard.ClearIfOurs();
+            ClearClipboard();
             _vault.Dispose();
             if (_keyFileDigest is not null) CryptographicOperations.ZeroMemory(_keyFileDigest);
         }
+    }
+
+    private static void ClearClipboard()
+    {
+        if (SecureClipboard.WarningFor(SecureClipboard.ClearIfOurs()) is { } warning)
+            Console.WriteLine($"\n{warning}");
     }
 
     private void Dispatch(string command, List<string> args)
@@ -82,7 +88,7 @@ internal sealed class Shell(VaultSession vault, byte[]? keyFileDigest)
             case "edit": Edit(One(target)); break;
             case "rm" or "delete": Remove(One(target)); break;
             case "history": History(One(target)); break;
-            case "gen": Console.WriteLine(GenerateFrom(options)); break;
+            case "gen": Console.WriteLine(options.GeneratedSecret()); break;
             case "save": Save(options.Has("--force")); break;
             case "reload": Reload(); break;
             case "passwd": ChangeMasterPassword(options); break;
@@ -187,7 +193,7 @@ internal sealed class Shell(VaultSession vault, byte[]? keyFileDigest)
             return;
         }
         _clipboardTimer?.Dispose();
-        _clipboardTimer = new Timer(_ => SecureClipboard.ClearIfOurs(), null, ClipboardLifetime, Timeout.InfiniteTimeSpan);
+        _clipboardTimer = new Timer(_ => ClearClipboard(), null, ClipboardLifetime, Timeout.InfiniteTimeSpan);
         Console.WriteLine($"Copied the {field} of '{e.Title}'. It is cleared in {ClipboardLifetime.TotalSeconds:0} seconds.");
     }
 
@@ -231,7 +237,19 @@ internal sealed class Shell(VaultSession vault, byte[]? keyFileDigest)
             case "t" or "type":
                 return Prompt.NewSecret("Password");
             default:
-                var length = int.TryParse(Prompt.Line("Length", "32"), out var n) ? n : 32;
+                int length;
+                while (true)
+                {
+                    try
+                    {
+                        length = Options.WholeNumber(Prompt.Line("Length", "32"), "password length", 8, 1024);
+                        break;
+                    }
+                    catch (ArgumentException e)
+                    {
+                        Console.WriteLine(e.Message);
+                    }
+                }
                 var symbols = Prompt.YesNo("Include symbols?", defaultYes: true);
                 var generated = PasswordGenerator.Generate(length, symbols);
                 Console.WriteLine($"Generated a {length}-character password ({PasswordGenerator.PasswordEntropyBits(length, symbols):0} bits). Use 'copy' or 'reveal' to get it.");
@@ -349,7 +367,7 @@ internal sealed class Shell(VaultSession vault, byte[]? keyFileDigest)
             Console.WriteLine($"\n[idle {IdleLock.TotalMinutes:0} min - not locking because of unsaved changes; save or quit]");
             return;
         }
-        SecureClipboard.ClearIfOurs();
+        ClearClipboard();
         _vault.Dispose();
         Console.WriteLine($"\nLocked after {IdleLock.TotalMinutes:0} minutes idle.");
         Environment.Exit(0);
@@ -357,16 +375,9 @@ internal sealed class Shell(VaultSession vault, byte[]? keyFileDigest)
 
     private void OnCancel(object? sender, ConsoleCancelEventArgs e)
     {
-        SecureClipboard.ClearIfOurs();
+        ClearClipboard();
         if (_vault.IsDirty) Console.WriteLine("\nUnsaved changes were discarded.");
         _vault.Dispose();
-    }
-
-    private static string GenerateFrom(Options options)
-    {
-        if (options.Value("--words") is { } words) return PasswordGenerator.GeneratePassphrase(int.Parse(words));
-        var length = options.Positional.FirstOrDefault() is { } l ? int.Parse(l) : 32;
-        return PasswordGenerator.Generate(length, symbols: !options.Has("--no-symbols"));
     }
 
     private static string Required(string label)
