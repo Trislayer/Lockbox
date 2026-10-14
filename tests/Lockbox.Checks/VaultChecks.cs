@@ -138,6 +138,16 @@ internal static class VaultChecks
         File.WriteAllBytes(path, [.. original, 0]);
         Checks.Throws<VaultFormatException>(() => VaultSession.Open(path, "pw", null), "an extended file is detected");
 
+        // Authentic (sealed with the right key) but with a null where the model requires text.
+        using (var keys = VaultKeys.Create("pw", null, Fast))
+        {
+            File.WriteAllBytes(path, VaultFormat.SealJson(keys, """{"schema":1,"entries":[{"title":null,"password":"x"}]}"""u8));
+            Checks.Throws<VaultFormatException>(() => VaultSession.Open(path, "pw", null), "a null in a non-nullable field is refused, not loaded as null");
+            File.WriteAllBytes(path, VaultFormat.SealJson(keys, """{"schema":1,"entries":[{"title":"t"}]}"""u8));
+            using (var ok = VaultSession.Open(path, "pw", null))
+                Checks.Is(ok.Document.Entries.Single().Password == "", "a missing optional field takes its default");
+        }
+
         var huge = (byte[])original.Clone();
         BitConverter.GetBytes(int.MaxValue).CopyTo(huge, 8);
         File.WriteAllBytes(path, huge);
@@ -190,7 +200,7 @@ internal static class VaultChecks
         }
         var backups = Directory.GetFiles(vault.BackupDirectory);
         Checks.Is(backups.Length == 3, $"only the newest {vault.BackupsToKeep} backups are kept (found {backups.Length})");
-        var newest = backups.Max(StringComparer.Ordinal)!;
+        var newest = backups.Order(StringComparer.Ordinal).Last();
         using (var previous = VaultSession.Open(newest, "pw", null))
             Checks.Is(previous.Document.Entries.Count == 5, "the newest backup is the version before the last save");
         Checks.Is(Directory.GetFiles(dir, "*.tmp-*").Length == 0, "no temp files are left behind");

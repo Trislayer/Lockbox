@@ -68,7 +68,14 @@ public sealed class PasswordHistoryItem
     public DateTimeOffset Retired { get; set; }
 }
 
-/// <summary>Source-generated JSON (no reflection), so Native AOT and trimming are safe.</summary>
-[JsonSourceGenerationOptions(WriteIndented = false, PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
+/// <summary>
+/// Source-generated JSON (no reflection), so Native AOT and trimming are safe. A null where
+/// the model says non-null fails deserialization instead of reaching the code as a null.
+/// </summary>
+[JsonSourceGenerationOptions(
+    WriteIndented = false,
+    PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
+    RespectNullableAnnotations = true,
+    RespectRequiredConstructorParameters = true)]
 [JsonSerializable(typeof(VaultDocument))]
 internal sealed partial class VaultJson : JsonSerializerContext;

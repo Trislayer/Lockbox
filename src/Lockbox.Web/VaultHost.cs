@@ -170,10 +170,11 @@ internal sealed class VaultHost : IDisposable
     {
         lock (_gate)
         {
+            var vault = Open();
             var entry = new VaultEntry();
             Apply(entry, write);
-            Open().Document.Entries.Add(entry);
-            _vault!.MarkDirty();
+            vault.Document.Entries.Add(entry);
+            vault.MarkDirty();
             return Detail(entry);
         }
     }
@@ -182,9 +183,10 @@ internal sealed class VaultHost : IDisposable
     {
         lock (_gate)
         {
-            var entry = Find(id);
+            var vault = Open();
+            var entry = Find(vault, id);
             Apply(entry, write);
-            _vault!.MarkDirty();
+            vault.MarkDirty();
             return Detail(entry);
         }
     }
@@ -193,8 +195,9 @@ internal sealed class VaultHost : IDisposable
     {
         lock (_gate)
         {
-            Open().Document.Entries.Remove(Find(id));
-            _vault!.MarkDirty();
+            var vault = Open();
+            vault.Document.Entries.Remove(Find(vault, id));
+            vault.MarkDirty();
         }
     }
 
@@ -264,8 +267,11 @@ internal sealed class VaultHost : IDisposable
 
     private VaultSession Open() => _vault ?? throw new VaultLockedException();
 
-    private VaultEntry Find(Guid id) =>
-        Open().Document.Entries.FirstOrDefault(e => e.Id == id) ?? throw new KeyNotFoundException("No such entry (was it deleted, or the vault reloaded?).");
+    private VaultEntry Find(Guid id) => Find(Open(), id);
+
+    private static VaultEntry Find(VaultSession vault, Guid id) =>
+        vault.Document.Entries.FirstOrDefault(e => e.Id == id)
+        ?? throw new KeyNotFoundException($"No entry with id {id} (was it deleted, or the vault reloaded?).");
 
     private static void Apply(VaultEntry entry, EntryWrite write)
     {

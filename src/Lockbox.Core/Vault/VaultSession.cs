@@ -102,7 +102,8 @@ public sealed class VaultSession : IDisposable
     /// </summary>
     public IReadOnlyList<string> FindPossibleConflictCopies()
     {
-        var directory = System.IO.Path.GetDirectoryName(Path)!;
+        var directory = System.IO.Path.GetDirectoryName(Path)
+            ?? throw new InvalidOperationException($"'{Path}' has no parent directory.");
         var stem = System.IO.Path.GetFileNameWithoutExtension(Path);
         return Directory.EnumerateFiles(directory, stem + "*" + Extension)
             .Where(f => !string.Equals(System.IO.Path.GetFullPath(f), Path, StringComparison.OrdinalIgnoreCase))

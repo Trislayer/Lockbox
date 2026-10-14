@@ -10,6 +10,10 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <!-- Nullable warnings are errors on their own as well, so they stay errors even if
+         TreatWarningsAsErrors is relaxed. Lockbox.Checks (ConventionChecks) fails if a project
+         overrides any of these settings or suppresses a nullable warning in source. -->
+    <WarningsAsErrors>$(WarningsAsErrors);nullable</WarningsAsErrors>
     <Deterministic>true</Deterministic>
   </PropertyGroup>
 

@@ -107,12 +107,25 @@ public static class VaultFormat
     internal static byte[] Seal(VaultKeys keys, VaultDocument document)
     {
         var json = JsonSerializer.SerializeToUtf8Bytes(document, VaultJson.Default.VaultDocument);
+        try
+        {
+            return SealJson(keys, json);
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(json);
+        }
+    }
+
+    /// <summary>Encrypt a payload that is already JSON. Lockbox.Checks uses it to plant malformed payloads.</summary>
+    internal static byte[] SealJson(VaultKeys keys, ReadOnlySpan<byte> json)
+    {
         var plaintextLength = ((4 + json.Length + PaddingQuantum - 1) / PaddingQuantum) * PaddingQuantum;
         var plaintext = new byte[plaintextLength];
         try
         {
             BinaryPrimitives.WriteInt32LittleEndian(plaintext, json.Length);
-            json.CopyTo(plaintext, 4);
+            json.CopyTo(plaintext.AsSpan(4));
 
             var file = new byte[HeaderLength + plaintextLength + TagSize];
             WriteHeader(file, keys);
@@ -128,7 +141,6 @@ public static class VaultFormat
         }
         finally
         {
-            CryptographicOperations.ZeroMemory(json);
             CryptographicOperations.ZeroMemory(plaintext);
         }
     }
@@ -180,6 +192,13 @@ public static class VaultFormat
             var document = JsonSerializer.Deserialize(plaintext.AsSpan(4, jsonLength), VaultJson.Default.VaultDocument)
                 ?? throw new VaultFormatException("Vault payload is empty.");
             return (keys, document);
+        }
+        catch (JsonException e)
+        {
+            // Authenticated, so written by a Lockbox - but not one whose shape this build accepts
+            // (for example a null where a value is required).
+            keys.Dispose();
+            throw new VaultFormatException($"The vault unlocked but its contents are not valid: {e.Message}");
         }
         catch (AuthenticationTagMismatchException)
         {

@@ -48,7 +48,8 @@ internal sealed record GenerateResponse(string Value, double Bits);
 internal sealed record MessageResponse(string Message);
 internal sealed record ErrorResponse(string Error, string Code);
 
-[JsonSourceGenerationOptions(JsonSerializerDefaults.Web)]
+// A request with a null or missing non-nullable field is rejected with 400 before a handler runs.
+[JsonSourceGenerationOptions(JsonSerializerDefaults.Web, RespectNullableAnnotations = true, RespectRequiredConstructorParameters = true)]
 [JsonSerializable(typeof(InspectRequest))]
 [JsonSerializable(typeof(InspectResponse))]
 [JsonSerializable(typeof(UnlockRequest))]

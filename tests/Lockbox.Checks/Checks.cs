@@ -59,7 +59,8 @@ internal static class Checks
         {
             var psi = new ProcessStartInfo(fileName) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
             foreach (var arg in args) psi.ArgumentList.Add(arg);
-            using var process = Process.Start(psi)!;
+            using var process = Process.Start(psi);
+            if (process is null) return null;
             var output = process.StandardOutput.ReadToEnd();
             process.WaitForExit();
             return process.ExitCode == 0 ? output.Trim() : null;

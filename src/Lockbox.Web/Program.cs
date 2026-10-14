@@ -36,7 +36,13 @@ builder.WebHost.ConfigureKestrel(kestrel =>
     kestrel.Limits.MaxRequestBodySize = 1024 * 1024;
 });
 builder.Logging.SetMinimumLevel(LogLevel.Warning);
-builder.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.TypeInfoResolverChain.Insert(0, UiJson.Default));
+builder.Services.ConfigureHttpJsonOptions(o =>
+{
+    o.SerializerOptions.TypeInfoResolverChain.Insert(0, UiJson.Default);
+    // Request binding uses these options, not UiJson's own, so the null rules are set here too.
+    o.SerializerOptions.RespectNullableAnnotations = true;
+    o.SerializerOptions.RespectRequiredConstructorParameters = true;
+});
 
 var host = new VaultHost(vaultArg is null ? null : Path.GetFullPath(vaultArg), keyFileArg is null ? null : Path.GetFullPath(keyFileArg));
 var gate = new LaunchGate();
