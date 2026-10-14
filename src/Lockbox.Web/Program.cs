@@ -52,6 +52,23 @@ builder.Services.ConfigureHttpJsonOptions(o =>
 
 var host = new VaultHost(vaultArg is null ? null : Path.GetFullPath(vaultArg), keyFileArg is null ? null : Path.GetFullPath(keyFileArg));
 var gate = new LaunchGate();
+// The launch link is a secret, and other users of this machine can read the command lines of
+// our processes (ps, /proc) - including `open <url>`. So the browser is pointed at a file only
+// this user can read that redirects to the link, and the file is deleted once it has been used.
+var launchDirectory = openBrowser ? Directory.CreateTempSubdirectory("lockbox-ui-").FullName : null; // 0700 on Unix
+var launchFile = launchDirectory is null ? null : Path.Combine(launchDirectory, "open-lockbox.html");
+void DeleteLaunchFile()
+{
+    try
+    {
+        if (launchFile is not null) File.Delete(launchFile);
+    }
+    catch (IOException)
+    {
+        // The browser may still hold it open on Windows; the folder goes at exit.
+    }
+}
+gate.LoggedIn = DeleteLaunchFile;
 var app = builder.Build();
 app.Use(gate.InvokeAsync);
 
@@ -109,7 +126,8 @@ api.MapPost("/reload", (ReloadRequest r) => { host.Reload(r.Password); return St
 api.MapPost("/passwd", (PasswdRequest r) =>
 {
     var keyFile = host.ChangeMasterPassword(r);
-    return Message("Master password changed and saved. Older backups still open with the old password."
+    return Message("Master password changed and saved, and the backups re-encrypted to match. Copies made before " +
+        "this - your cloud provider's own version history and trash, or anything already downloaded - still open with the old password."
         + (keyFile is null ? "" : $" New key file: {keyFile} - keep it off the cloud folder and back it up."));
 });
 api.MapGet("/entries", () => Results.Json(host.List(), UiJson.Default.EntrySummaryArray));
@@ -142,7 +160,14 @@ void Announce(string launchPath)
     var url = origin + launchPath;
     Console.WriteLine($"Lockbox UI: {url}");
     Console.WriteLine("  (single-use link; L = new link, Q = lock and quit)");
-    if (openBrowser) OpenBrowser(url);
+    if (launchFile is null) return;
+    var link = WebUtility.HtmlEncode(url);
+    DeleteLaunchFile();
+    PrivateFiles.WriteAllBytes(launchFile, System.Text.Encoding.UTF8.GetBytes(
+        "<!doctype html><meta charset=\"utf-8\"><meta name=\"referrer\" content=\"no-referrer\">" +
+        $"<meta http-equiv=\"refresh\" content=\"0;url={link}\"><title>Lockbox</title>" +
+        $"<p>Opening Lockbox&hellip; <a href=\"{link}\">continue</a></p>"));
+    OpenBrowser(launchFile);
 }
 
 Console.WriteLine($"lockbox-ui {Assembly.GetExecutingAssembly().GetName().Version?.ToString(3)} - listening on {origin} (this machine only)");
@@ -169,6 +194,7 @@ try
 finally
 {
     host.Dispose();
+    if (launchDirectory is not null) Directory.Delete(launchDirectory, recursive: true);
     Console.WriteLine("Locked and stopped.");
 }
 return 0;
@@ -192,16 +218,16 @@ static Dictionary<string, (byte[] Bytes, string ContentType)> LoadAssets()
     };
 }
 
-static void OpenBrowser(string url)
+static void OpenBrowser(string file)
 {
     try
     {
         if (OperatingSystem.IsWindows())
-            Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+            Process.Start(new ProcessStartInfo(file) { UseShellExecute = true });
         else if (OperatingSystem.IsMacOS())
-            Process.Start("open", [url]);
+            Process.Start("open", [file]);
         else
-            Process.Start("xdg-open", [url]);
+            Process.Start("xdg-open", [file]);
     }
     catch (Exception e)
     {

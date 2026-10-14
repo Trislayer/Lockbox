@@ -74,7 +74,7 @@ internal sealed class VaultHost : IDisposable
         var header = VaultSession.Inspect(path);
         var digest = header.RequiresKeyFile ? KeyFile.LoadDigest(Clean(Required(request.KeyFilePath, "This vault needs its key file."))) : null;
         var vault = VaultSession.Open(path, request.Password, digest);
-        Replace(vault, digest);
+        Replace(vault, digest, vault.RollbackWarning);
     }
 
     public string? Create(CreateRequest request)
@@ -96,7 +96,7 @@ internal sealed class VaultHost : IDisposable
             digest = KeyFile.LoadDigest(Clean(request.KeyFilePath));
         }
 
-        Replace(VaultSession.Create(path, request.Password, digest), digest);
+        Replace(VaultSession.Create(path, request.Password, digest), digest, null);
         return createdKeyFile;
     }
 
@@ -134,7 +134,8 @@ internal sealed class VaultHost : IDisposable
             path = Open().Path;
             digest = _keyFileDigest is null ? null : (byte[])_keyFileDigest.Clone();
         }
-        Replace(VaultSession.Open(path, password, digest), digest);
+        var vault = VaultSession.Open(path, password, digest);
+        Replace(vault, digest, vault.RollbackWarning);
     }
 
     public string? ChangeMasterPassword(PasswdRequest request)
@@ -261,14 +262,31 @@ internal sealed class VaultHost : IDisposable
 
     private void LockIfIdle()
     {
+        var message = $"Locked after {IdleLock.TotalMinutes:0} minutes without activity.";
         lock (_gate)
         {
-            if (_vault is null || _vault.IsDirty || Stopwatch.GetElapsedTime(_lastActivity) < IdleLock) return;
+            if (_vault is null || Stopwatch.GetElapsedTime(_lastActivity) < IdleLock) return;
+            if (_vault.IsDirty)
+            {
+                try
+                {
+                    var written = _vault.SaveBeforeLock();
+                    message += written == _vault.Path
+                        ? " Your unsaved changes were saved first."
+                        : $" Another device had saved the vault, so your unsaved changes were written to {written} - open it to copy them across.";
+                }
+                catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+                {
+                    // Locking now would throw the changes away; try again on the next tick.
+                    _message = $"Could not save your unsaved changes before the idle lock ({e.Message}), so the vault is still unlocked. Save or lock it.";
+                    return;
+                }
+            }
         }
-        Lock($"Locked after {IdleLock.TotalMinutes:0} minutes without activity.");
+        Lock(message);
     }
 
-    private void Replace(VaultSession vault, byte[]? digest)
+    private void Replace(VaultSession vault, byte[]? digest, string? message)
     {
         lock (_gate)
         {
@@ -277,7 +295,7 @@ internal sealed class VaultHost : IDisposable
             _vault = vault;
             _keyFileDigest = digest;
             _lastActivity = Stopwatch.GetTimestamp();
-            _message = null;
+            _message = message;
         }
     }
 

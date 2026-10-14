@@ -18,7 +18,11 @@ internal static class Proofs
             "Argon2id GB rotation 24->23: the RFC 9106 vector and all 6 OpenSSL cases red.",
         [nameof(VaultChecks)] =
             "Save without the conflict check: 'saving over someone else's change is refused' and 'the refused save left " +
-            "the laptop's version intact' red. KEK without NFC: 'a passphrase typed decomposed opens ...' red.",
+            "the laptop's version intact' red. KEK without NFC: 'a passphrase typed decomposed opens ...' red. " +
+            "No RekeyBackups after a password change: 'no backup opens with the old password' and 3 more red. " +
+            "RollbackWarning always null: 'an older version put back in place is reported' and 1 more red. " +
+            "PrivateFiles without UnixCreateMode: the key file, vault, backup and ledger 0600 checks red. " +
+            "SaveBeforeLock forcing the save: 'the other device's version is left as it was' and 2 more red.",
         [nameof(GeneratorChecks)] =
             "No Fisher-Yates shuffle: 'the first character is drawn from the whole alphabet' red (26 distinct).",
         [nameof(ConventionChecks)] =

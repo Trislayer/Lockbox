@@ -28,7 +28,8 @@ lockbox-ui "G:\My Drive\vault.lbx" --keyfile C:\Users\me\vault.lbxkey
 Set `LOCKBOX_VAULT` / `LOCKBOX_KEYFILE` to skip the paths. In a `lockbox open` session:
 `list`, `show`, `reveal`, `copy <entry> [username|url]`, `add`, `edit`, `rm`, `history`, `gen`,
 `save`, `reload`, `passwd`, `info`, `quit`. `lockbox-ui` prints a single-use link and opens
-the browser; press `L` in its terminal for a new link, `Q` to lock and quit.
+the browser on it (through an owner-only file, so the link never appears on a command line
+other users can see); press `L` in its terminal for a new link, `Q` to lock and quit.
 
 Third-party content: the BIP39 English wordlist (MIT), credited in
 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md), which is copied next to every built executable.
@@ -61,13 +62,23 @@ packs - toolchain, not dependencies; nothing third-party is linked in.
 - **Encryption:** a random 256-bit data key, wrapped by the password-derived key with
   AES-256-GCM; the entries are AES-256-GCM under the data key with a fresh nonce on every
   save. Every header byte is authenticated. Layout: `src/Lockbox.Core/Vault/VaultFormat.cs`.
+- **Changing the master password** generates a fresh data key and salt, and re-encrypts the
+  backups to match, so no file Lockbox keeps opens with the old password.
 - **Saving:** refuses to overwrite a file another device saved since you opened it (reload,
   or force); keeps the last 10 versions in `<vault>.backups/`; writes via temp file + rename
   and reads back to verify. Files like `vault (1).lbx` next to the vault are flagged as
-  probable sync conflicts.
+  probable sync conflicts. The vault, its backups and key files are created readable by
+  you only (0600 on macOS/Linux).
+- **Older copies:** every save raises a revision number inside the encrypted payload, and
+  each device remembers the highest revision it has seen (in local app data, not the cloud
+  folder). Opening an older one - an old version someone put back in place, or a backup -
+  shows a warning.
 - **Clipboard:** cleared after 30 seconds (only if it still holds what Lockbox put there).
-  On Windows it is excluded from clipboard history and cloud clipboard.
-- **Idle lock:** 10 minutes, unless there are unsaved changes.
+  On Windows it is excluded from clipboard history and cloud clipboard; on macOS it is kept
+  off Universal Clipboard and marked concealed, so clipboard managers skip it.
+- **Idle lock:** 10 minutes. Unsaved changes are saved first - or, if another device saved
+  in the meantime, written to `vault (unsaved <time>).lbx` beside it, flagged like a sync
+  conflict. The browser tab reloads on lock, so nothing decrypted stays in the page.
 
 ## What it does not protect against
 
@@ -78,5 +89,10 @@ packs - toolchain, not dependencies; nothing third-party is linked in.
   process exits; the data key itself is zeroed on lock.
 - **The browser (`lockbox-ui`).** Extensions with access to all sites can read the page. Use a
   browser profile without extensions, or the CLI, for the most sensitive work.
+- **Copies made before a password change.** Your cloud provider's version history and trash
+  (Google Drive keeps both for 30 days), or a copy someone already downloaded, still open with
+  the old password. If it leaked, assume those copies are readable.
+- **An old version on a device that never saw a newer one.** The rollback warning only knows
+  what this device has opened.
 - **Two devices editing offline at once.** Sync clients make a conflict copy; Lockbox flags
   it, but merging is manual (open both, copy entries across).

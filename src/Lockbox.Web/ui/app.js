@@ -65,11 +65,31 @@ async function refreshState() {
   const wasUnlocked = ui.state?.unlocked;
   ui.state = state;
   if (!state.unlocked) {
-    showLock(state.message);
+    if (wasUnlocked) {
+      // Reload rather than hide: a revealed password, notes and the entry list would otherwise
+      // stay in the page, readable with the developer tools by whoever finds the tab.
+      stashLockMessage(state.message);
+      location.reload();
+      return;
+    }
+    showLock(state.message ?? takeLockMessage());
     return;
   }
   if (!wasUnlocked) await showMain();
   renderStatus(state);
+}
+
+// The lock message survives the reload in sessionStorage (this tab only); without storage it is lost.
+function stashLockMessage(message) {
+  try { if (message) sessionStorage.setItem("lockMessage", message); } catch { /* no storage */ }
+}
+
+function takeLockMessage() {
+  try {
+    const message = sessionStorage.getItem("lockMessage");
+    sessionStorage.removeItem("lockMessage");
+    return message;
+  } catch { return null; }
 }
 
 function renderStatus(state) {
@@ -377,12 +397,13 @@ function openReload() {
 
 async function doReload() {
   try {
-    await busy($("reload-submit"), "Unlocking…", () => api("POST", "/reload", { password: $("reload-password").value }));
+    const reloaded = await busy($("reload-submit"), "Unlocking…", () => api("POST", "/reload", { password: $("reload-password").value }));
     $("reload-dialog").close();
     $("reload-password").value = "";
     closeEntry();
     await loadEntries();
     await refreshState();
+    if (reloaded.message) banner(reloaded.message);
     toast("Reloaded.");
   } catch (e) {
     $("reload-error").textContent = e.message;
@@ -442,13 +463,14 @@ document.addEventListener("DOMContentLoaded", async () => {
     e.preventDefault();
     $("lock-error").textContent = "";
     try {
-      await busy($("open-submit"), "Unlocking…", () => api("POST", "/unlock", {
+      const unlocked = await busy($("open-submit"), "Unlocking…", () => api("POST", "/unlock", {
         path: $("open-path").value,
         password: $("open-password").value,
         keyFilePath: $("open-keyfile-row").hidden ? null : $("open-keyfile").value,
       }));
       $("open-password").value = "";
       await refreshState();
+      if (unlocked.message) banner(unlocked.message);
     } catch (err) {
       $("lock-error").textContent = err.message;
       $("open-password").select();

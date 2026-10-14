@@ -10,8 +10,10 @@ namespace Lockbox.Core;
 /// <remarks>
 /// On Windows the text goes in through user32 with the formats that keep it out of Win+V
 /// clipboard history and cloud clipboard sync ("ExcludeClipboardContentFromMonitorProcessing",
-/// "CanIncludeInClipboardHistory" = 0, "CanUploadToCloudClipboard" = 0). On macOS it uses
-/// pbcopy/pbpaste; on Linux wl-copy/wl-paste (Wayland), then xclip, then xsel.
+/// "CanIncludeInClipboardHistory" = 0, "CanUploadToCloudClipboard" = 0). On macOS it goes in
+/// through NSPasteboard marked current-host-only, which keeps it off Universal Clipboard (other
+/// Apple devices), and with the nspasteboard.org concealed/transient types that clipboard
+/// managers honour by not recording it. On Linux wl-copy/wl-paste (Wayland), then xclip, then xsel.
 /// </remarks>
 public enum ClipboardClearOutcome
 {
@@ -28,6 +30,7 @@ public static partial class SecureClipboard
 {
     private static readonly Lock s_gate = new();
     private static uint s_windowsSequence;
+    private static nint s_macChangeCount;
     private static string? s_lastCopied;
 
     /// <summary>Copy <paramref name="text"/>; returns false with a reason if no clipboard is usable.</summary>
@@ -41,6 +44,10 @@ public static partial class SecureClipboard
                 {
                     Windows.SetText(text);
                     s_windowsSequence = Windows.GetClipboardSequenceNumber();
+                }
+                else if (OperatingSystem.IsMacOS())
+                {
+                    s_macChangeCount = MacOS.SetText(text);
                 }
                 else
                 {
@@ -80,6 +87,12 @@ public static partial class SecureClipboard
                         Windows.Clear();
                         outcome = ClipboardClearOutcome.Cleared;
                     }
+                }
+                else if (OperatingSystem.IsMacOS())
+                {
+                    outcome = MacOS.ClearIfChangeCount(s_macChangeCount)
+                        ? ClipboardClearOutcome.Cleared
+                        : ClipboardClearOutcome.ChangedSinceCopy;
                 }
                 else if (Unix.GetText() != s_lastCopied)
                 {
@@ -217,6 +230,107 @@ public static partial class SecureClipboard
         private static partial nint GlobalFree(nint hMem);
     }
 
+    /// <summary>NSPasteboard through the Objective-C runtime (no bindings: Native AOT, no NuGet).</summary>
+    private static unsafe partial class MacOS
+    {
+        private const string ObjC = "/usr/lib/libobjc.A.dylib";
+        private const nuint NSPasteboardContentsCurrentHostOnly = 1;
+
+        static MacOS()
+        {
+            // Registers NSPasteboard with the runtime; a console app does not load AppKit itself.
+            NativeLibrary.Load("/System/Library/Frameworks/AppKit.framework/AppKit");
+        }
+
+        /// <summary>Put <paramref name="text"/> on the general pasteboard; returns its change count afterwards.</summary>
+        public static nint SetText(string text)
+        {
+            var pool = objc_autoreleasePoolPush();
+            try
+            {
+                var pasteboard = GeneralPasteboard();
+                // Clears the pasteboard and keeps what follows off Universal Clipboard.
+                Send(pasteboard, Selector("prepareForNewContentsWithOptions:"), NSPasteboardContentsCurrentHostOnly);
+                nint value;
+                fixed (char* chars = text)
+                    value = Send(Class("NSString"), Selector("stringWithCharacters:length:"), chars, (nuint)text.Length);
+                SetString(pasteboard, value, "public.utf8-plain-text");
+                // http://nspasteboard.org: clipboard managers skip concealed and transient content.
+                var empty = Send(Class("NSString"), Selector("string"));
+                SetString(pasteboard, empty, "org.nspasteboard.ConcealedType");
+                SetString(pasteboard, empty, "org.nspasteboard.TransientType");
+                return Send(pasteboard, Selector("changeCount"));
+            }
+            finally
+            {
+                objc_autoreleasePoolPop(pool);
+            }
+        }
+
+        /// <summary>Clear the pasteboard if nothing has been put on it since <paramref name="changeCount"/>.</summary>
+        public static bool ClearIfChangeCount(nint changeCount)
+        {
+            var pool = objc_autoreleasePoolPush();
+            try
+            {
+                var pasteboard = GeneralPasteboard();
+                if (Send(pasteboard, Selector("changeCount")) != changeCount) return false;
+                Send(pasteboard, Selector("clearContents"));
+                return true;
+            }
+            finally
+            {
+                objc_autoreleasePoolPop(pool);
+            }
+        }
+
+        private static nint GeneralPasteboard() =>
+            Send(Class("NSPasteboard"), Selector("generalPasteboard")) is var p and not 0
+                ? p
+                : throw new InvalidOperationException("NSPasteboard is not available.");
+
+        private static void SetString(nint pasteboard, nint value, string type)
+        {
+            var typeName = Send(Class("NSString"), Selector("stringWithUTF8String:"), type);
+            if (!SendBool(pasteboard, Selector("setString:forType:"), value, typeName))
+                throw new InvalidOperationException($"NSPasteboard refused {type}.");
+        }
+
+        private static nint Class(string name) =>
+            objc_getClass(name) is var c and not 0 ? c : throw new InvalidOperationException($"Objective-C class {name} not found.");
+
+        private static nint Selector(string name) => sel_registerName(name);
+
+        [LibraryImport(ObjC, StringMarshalling = StringMarshalling.Utf8)]
+        private static partial nint objc_getClass(string name);
+
+        [LibraryImport(ObjC, StringMarshalling = StringMarshalling.Utf8)]
+        private static partial nint sel_registerName(string name);
+
+        [LibraryImport(ObjC)]
+        private static partial nint objc_autoreleasePoolPush();
+
+        [LibraryImport(ObjC)]
+        private static partial void objc_autoreleasePoolPop(nint pool);
+
+        // objc_msgSend must be called through a prototype matching each method's real signature.
+        [LibraryImport(ObjC, EntryPoint = "objc_msgSend")]
+        private static partial nint Send(nint receiver, nint selector);
+
+        [LibraryImport(ObjC, EntryPoint = "objc_msgSend")]
+        private static partial nint Send(nint receiver, nint selector, nuint argument);
+
+        [LibraryImport(ObjC, EntryPoint = "objc_msgSend", StringMarshalling = StringMarshalling.Utf8)]
+        private static partial nint Send(nint receiver, nint selector, string argument);
+
+        [LibraryImport(ObjC, EntryPoint = "objc_msgSend")]
+        private static partial nint Send(nint receiver, nint selector, char* characters, nuint length);
+
+        [LibraryImport(ObjC, EntryPoint = "objc_msgSend")]
+        [return: MarshalAs(UnmanagedType.U1)]
+        private static partial bool SendBool(nint receiver, nint selector, nint first, nint second);
+    }
+
     private static class Unix
     {
         public static void SetText(string text)
@@ -234,8 +348,6 @@ public static partial class SecureClipboard
 
         private static ((string File, string[] Args) Copy, (string File, string[] Args) Paste) Tools()
         {
-            if (OperatingSystem.IsMacOS())
-                return (("pbcopy", []), ("pbpaste", []));
             if (Environment.GetEnvironmentVariable("WAYLAND_DISPLAY") is { Length: > 0 } && OnPath("wl-copy"))
                 return (("wl-copy", []), ("wl-paste", ["--no-newline"]));
             if (OnPath("xclip"))

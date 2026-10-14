@@ -30,6 +30,9 @@ public sealed class VaultSession : IDisposable
     public const int DefaultBackupsToKeep = 10;
 
     private VaultKeys _keys;
+    // After ChangeMasterKey and until the next save: the keys the file on disk and its backups
+    // are still sealed under.
+    private VaultKeys? _retiredKeys;
     private byte[]? _diskHash;
     private bool _disposed;
 
@@ -48,6 +51,13 @@ public sealed class VaultSession : IDisposable
     public KdfParameters Kdf => _keys.Kdf;
     public bool UsesKeyFile => (_keys.Flags & VaultFlags.KeyFile) != 0;
     public string BackupDirectory => Path + ".backups";
+
+    /// <summary>
+    /// Set when this file is an older revision of the vault than this device has already
+    /// opened or saved (see <see cref="RevisionLedger"/>): a backup or conflict copy opened on
+    /// purpose, or an old version someone put in place of the current one.
+    /// </summary>
+    public string? RollbackWarning { get; private init; }
 
     /// <summary>Create and save a new, empty vault. Refuses to replace an existing file.</summary>
     public static VaultSession Create(string path, string password, byte[]? keyFileDigest, KdfParameters? kdf = null)
@@ -79,7 +89,15 @@ public sealed class VaultSession : IDisposable
     {
         var bytes = File.ReadAllBytes(path);
         var (keys, document) = Named(path, () => VaultFormat.Unseal(bytes, password, keyFileDigest));
-        return new VaultSession(path, keys, document, SHA256.HashData(bytes));
+        var seen = RevisionLedger.Seen(document.VaultId);
+        RevisionLedger.Record(document.VaultId, document.Revision);
+        return new VaultSession(path, keys, document, SHA256.HashData(bytes))
+        {
+            RollbackWarning = document.Revision >= seen ? null :
+                $"{System.IO.Path.GetFullPath(path)} is an older version of this vault than this device has already seen " +
+                $"(revision {document.Revision}; this device has seen {seen}). If you did not mean to open a backup or a " +
+                "conflict copy, someone may have put an old copy in place of the current one: check recent changes before saving.",
+        };
     }
 
     /// <summary>Format errors name the file they are about.</summary>
@@ -135,9 +153,17 @@ public sealed class VaultSession : IDisposable
         if (!force && !MatchesLastKnown(onDisk))
             throw new VaultConflictException(Path);
 
+        // Past any revision this device has seen, so saving an older copy on purpose (a
+        // restored backup) is not reported as a rollback from then on.
+        Document.Revision = Math.Max(Document.Revision, RevisionLedger.Seen(Document.VaultId)) + 1;
         var bytes = VaultFormat.Seal(_keys, Document);
         if (onDisk is not null)
-            WriteBackup(onDisk);
+        {
+            // After a password change the previous version is still under the old key; its
+            // backup is written already re-sealed under the new one.
+            var previous = _retiredKeys is null ? onDisk : VaultFormat.Reseal(onDisk, _retiredKeys, _keys) ?? onDisk;
+            WriteBackup(previous);
+        }
         WriteAtomically(Path, bytes);
 
         if (!File.ReadAllBytes(Path).AsSpan().SequenceEqual(bytes))
@@ -145,18 +171,57 @@ public sealed class VaultSession : IDisposable
 
         _diskHash = SHA256.HashData(bytes);
         IsDirty = false;
+        RevisionLedger.Record(Document.VaultId, Document.Revision);
+
+        if (_retiredKeys is not null)
+        {
+            RekeyBackups(_retiredKeys);
+            _retiredKeys.Dispose();
+            _retiredKeys = null;
+        }
+    }
+
+    /// <summary>
+    /// Write unsaved changes so an idle lock never has to choose between staying unlocked and
+    /// losing them: to the vault, or - if another device saved it in the meantime - to
+    /// <c>&lt;name&gt; (unsaved &lt;time&gt;).lbx</c> beside it, sealed under the same keys, which
+    /// the conflict-copy check then points out. Returns the file written.
+    /// </summary>
+    public string SaveBeforeLock()
+    {
+        try
+        {
+            Save();
+            return Path;
+        }
+        catch (VaultConflictException)
+        {
+            var directory = System.IO.Path.GetDirectoryName(Path)
+                ?? throw new InvalidOperationException($"'{Path}' has no parent directory.");
+            var stem = System.IO.Path.GetFileNameWithoutExtension(Path);
+            var stamp = DateTime.Now.ToString("yyyy-MM-dd HHmmss", CultureInfo.InvariantCulture);
+            var copy = System.IO.Path.Combine(directory, $"{stem} (unsaved {stamp}){Extension}");
+            WriteAtomically(copy, VaultFormat.Seal(_keys, Document));
+            IsDirty = false;
+            return copy;
+        }
     }
 
     /// <summary>
     /// Re-key the vault under a new master password and/or key file (pass null to stop using
     /// one). A fresh data key and salt are generated, so a copy of an old file opened with an
-    /// old password reveals nothing about files saved after this. Takes effect on the next Save.
+    /// old password reveals nothing about files saved after this. Takes effect on the next
+    /// Save, which also re-seals the backups under the new key, so none of them opens with the
+    /// old password either.
     /// </summary>
     public void ChangeMasterKey(string password, byte[]? keyFileDigest, KdfParameters? kdf = null)
     {
         ThrowIfDisposed();
         var replacement = VaultKeys.Create(password, keyFileDigest, kdf ?? _keys.Kdf);
-        _keys.Dispose();
+        if (_retiredKeys is null)
+            _retiredKeys = _keys;
+        else
+            _keys.Dispose(); // a re-key that was never saved: nothing is sealed under it
         _keys = replacement;
         IsDirty = true;
     }
@@ -166,6 +231,7 @@ public sealed class VaultSession : IDisposable
         if (_disposed) return;
         _disposed = true;
         _keys.Dispose();
+        _retiredKeys?.Dispose();
         foreach (var entry in Document.Entries)
             entry.History.Clear();
         Document.Entries.Clear();
@@ -180,10 +246,10 @@ public sealed class VaultSession : IDisposable
 
     private void WriteBackup(byte[] previous)
     {
-        Directory.CreateDirectory(BackupDirectory);
+        PrivateFiles.CreateDirectory(BackupDirectory);
         var stem = System.IO.Path.GetFileNameWithoutExtension(Path);
         var stamp = DateTime.UtcNow.ToString("yyyyMMdd-HHmmss-fff", CultureInfo.InvariantCulture);
-        File.WriteAllBytes(System.IO.Path.Combine(BackupDirectory, $"{stem}.{stamp}{Extension}"), previous);
+        PrivateFiles.WriteAllBytes(System.IO.Path.Combine(BackupDirectory, $"{stem}.{stamp}{Extension}"), previous);
 
         var stale = new DirectoryInfo(BackupDirectory).GetFiles("*" + Extension)
             .OrderByDescending(f => f.Name, StringComparer.Ordinal)
@@ -192,12 +258,30 @@ public sealed class VaultSession : IDisposable
             file.Delete();
     }
 
+    /// <summary>
+    /// After a password change: every backup still sealed under the old data key is re-sealed
+    /// under the new one, and any that opens with neither (sealed before an even earlier
+    /// change) is deleted, so no backup opens with a retired password.
+    /// </summary>
+    private void RekeyBackups(VaultKeys retired)
+    {
+        if (!Directory.Exists(BackupDirectory)) return;
+        foreach (var file in Directory.GetFiles(BackupDirectory, "*" + Extension))
+        {
+            var old = File.ReadAllBytes(file);
+            if (VaultFormat.Reseal(old, retired, _keys) is { } resealed)
+                WriteAtomically(file, resealed);
+            else if (!VaultFormat.IsSealedUnder(old, _keys))
+                File.Delete(file);
+        }
+    }
+
     private static void WriteAtomically(string path, byte[] bytes)
     {
         var temp = path + ".tmp-" + Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(6));
         try
         {
-            using (var stream = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None, 4096, FileOptions.WriteThrough))
+            using (var stream = PrivateFiles.Create(temp, FileMode.CreateNew, FileOptions.WriteThrough))
             {
                 stream.Write(bytes);
                 stream.Flush(flushToDisk: true);

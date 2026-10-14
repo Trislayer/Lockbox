@@ -22,6 +22,7 @@ internal sealed class Shell(VaultSession vault, byte[]? keyFileDigest)
         try
         {
             Console.WriteLine($"Unlocked {_vault.Path} - {_vault.Document.Entries.Count} entries. Type 'help' for commands.");
+            WarnAboutRollback();
             WarnAboutConflictCopies();
 
             while (true)
@@ -291,6 +292,7 @@ internal sealed class Shell(VaultSession vault, byte[]? keyFileDigest)
         _vault.Dispose();
         _vault = reopened;
         Console.WriteLine($"Reloaded - {_vault.Document.Entries.Count} entries.");
+        WarnAboutRollback();
         WarnAboutConflictCopies();
     }
 
@@ -315,7 +317,8 @@ internal sealed class Shell(VaultSession vault, byte[]? keyFileDigest)
         _vault.ChangeMasterKey(password, keyFile);
         _keyFileDigest = keyFile;
         _vault.Save();
-        Console.WriteLine("Master password changed and saved. Backups made before this still open with the old password.");
+        Console.WriteLine("Master password changed and saved, and the backups re-encrypted to match. Copies made before this -");
+        Console.WriteLine("  your cloud provider's own version history and trash, or anything already downloaded - still open with the old password.");
     }
 
     private void Info()
@@ -327,6 +330,11 @@ internal sealed class Shell(VaultSession vault, byte[]? keyFileDigest)
         Console.WriteLine($"  Backups     {backups} in {_vault.BackupDirectory}");
         Console.WriteLine($"  On disk     {(_vault.HasExternalChanges() ? "CHANGED since opened (another device saved?) - see 'reload'" : "unchanged since opened/saved")}");
         WarnAboutConflictCopies();
+    }
+
+    private void WarnAboutRollback()
+    {
+        if (_vault.RollbackWarning is { } warning) Console.WriteLine($"WARNING: {warning}");
     }
 
     private void WarnAboutConflictCopies()
@@ -362,14 +370,27 @@ internal sealed class Shell(VaultSession vault, byte[]? keyFileDigest)
 
     private void OnIdle()
     {
+        var saved = "";
         if (_vault.IsDirty)
         {
-            Console.WriteLine($"\n[idle {IdleLock.TotalMinutes:0} min - not locking because of unsaved changes; save or quit]");
-            return;
+            try
+            {
+                var written = _vault.SaveBeforeLock();
+                saved = written == _vault.Path
+                    ? " Your unsaved changes were saved first."
+                    : $" Another device had saved the vault, so your unsaved changes were written to {written} - open it to copy them across.";
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                // Locking now would throw the changes away; try again after another idle period.
+                Console.WriteLine($"\n[idle {IdleLock.TotalMinutes:0} min - could not save your unsaved changes ({e.Message}), so not locking; save or quit]");
+                _idleTimer?.Change(IdleLock, Timeout.InfiniteTimeSpan);
+                return;
+            }
         }
         ClearClipboard();
         _vault.Dispose();
-        Console.WriteLine($"\nLocked after {IdleLock.TotalMinutes:0} minutes idle.");
+        Console.WriteLine($"\nLocked after {IdleLock.TotalMinutes:0} minutes idle.{saved}");
         Environment.Exit(0);
     }
 

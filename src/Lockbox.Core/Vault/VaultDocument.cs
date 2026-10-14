@@ -6,6 +6,16 @@ namespace Lockbox.Core.Vault;
 public sealed class VaultDocument
 {
     public int Schema { get; set; } = 1;
+
+    /// <summary>
+    /// Names this vault in <see cref="RevisionLedger"/>. A vault written before it existed gets
+    /// one on its next save.
+    /// </summary>
+    public Guid VaultId { get; set; } = Guid.NewGuid();
+
+    /// <summary>Raised on every save; encrypted with the entries, so it cannot be edited without the key.</summary>
+    public long Revision { get; set; }
+
     public List<VaultEntry> Entries { get; set; } = [];
 
     /// <summary>Entries in display order; list numbers refer to this order.</summary>

@@ -12,6 +12,9 @@ internal static class VaultChecks
     public static void Run()
     {
         var dir = Checks.TempDirectory();
+        // Never read or write the real ledger of revisions this device has seen.
+        var realLedger = RevisionLedger.FilePath;
+        RevisionLedger.FilePath = Path.Combine(dir, "ledger", "revisions.txt");
         try
         {
             RoundTrip(dir);
@@ -21,11 +24,16 @@ internal static class VaultChecks
             Conflicts(dir);
             Backups(dir);
             ChangeMasterKey(dir);
+            BackupsFollowPasswordChange(dir);
+            Rollback(dir);
+            SaveBeforeLock(dir);
+            OwnerOnlyFiles(dir);
             Unicode(dir);
             RealParameters(dir);
         }
         finally
         {
+            RevisionLedger.FilePath = realLedger;
             Directory.Delete(dir, recursive: true);
         }
     }
@@ -235,6 +243,140 @@ internal static class VaultChecks
             v.Save();
         }
         Checks.Is(!VaultSession.Inspect(path).RequiresKeyFile, "and removed again");
+    }
+
+    private static void BackupsFollowPasswordChange(string dir)
+    {
+        Checks.Section("Vault - backups follow a password change");
+        var path = NewPath(dir);
+        using (var vault = VaultSession.Create(path, "old", null, Fast))
+        {
+            for (var i = 0; i < 3; i++)
+            {
+                vault.Document.Entries.Add(new VaultEntry { Title = $"entry {i}" });
+                vault.Save();
+                Thread.Sleep(5);
+            }
+            // A backup from before an earlier password change: sealed under a key this session never had.
+            var stale = Path.Combine(vault.BackupDirectory, "stale" + VaultSession.Extension);
+            VaultSession.Create(stale, "older", null, Fast).Dispose();
+
+            vault.ChangeMasterKey("first", null);
+            vault.ChangeMasterKey("new", null); // re-keyed twice before saving: only the last counts
+            vault.Save();
+            Checks.Is(!File.Exists(stale), "a backup sealed under neither the old nor the new key is deleted");
+        }
+
+        var backups = Directory.GetFiles(path + ".backups");
+        Checks.Is(backups.Length == 4, $"every backup under the old key is kept: the 3 earlier ones and the one this save made (found {backups.Length})");
+        var openWithOld = backups.Count(b => Opens(b, "old"));
+        var openWithNew = backups.Count(b => Opens(b, "new"));
+        Checks.Is(openWithOld == 0, $"no backup opens with the old password ({openWithOld} did)");
+        Checks.Is(openWithNew == backups.Length, $"every backup opens with the new password ({openWithNew} of {backups.Length})");
+        Checks.Is(!Opens(path, "first"), "an intermediate password that was never saved opens nothing");
+        var newest = backups.Order(StringComparer.Ordinal).Last();
+        using (var previous = VaultSession.Open(newest, "new", null))
+            Checks.Is(previous.Document.Entries.Count == 3, "the backup this save made holds the version before it");
+        Checks.Is(Directory.GetFiles(path + ".backups", "*.tmp-*").Length == 0, "re-sealing leaves no temp files");
+    }
+
+    private static bool Opens(string path, string password)
+    {
+        try
+        {
+            VaultSession.Open(path, password, null).Dispose();
+            return true;
+        }
+        catch (VaultUnlockException)
+        {
+            return false;
+        }
+    }
+
+    private static void Rollback(string dir)
+    {
+        Checks.Section("Vault - an older copy put in place of the vault");
+        var path = NewPath(dir);
+        byte[] older;
+        using (var vault = VaultSession.Create(path, "pw", null, Fast))
+        {
+            vault.Document.Entries.Add(new VaultEntry { Title = "one" });
+            vault.Save();
+            older = File.ReadAllBytes(path);
+            vault.Document.Entries.Add(new VaultEntry { Title = "two" });
+            vault.Save();
+        }
+        using (var current = VaultSession.Open(path, "pw", null))
+            Checks.Is(current.RollbackWarning is null, "the current version opens without a warning");
+
+        var current2 = File.ReadAllBytes(path);
+        File.WriteAllBytes(path, older);
+        using (var rolledBack = VaultSession.Open(path, "pw", null))
+        {
+            Checks.Is(rolledBack.RollbackWarning is not null, "an older version put back in place is reported");
+            rolledBack.MarkDirty();
+            rolledBack.Save();
+        }
+        using (var restored = VaultSession.Open(path, "pw", null))
+            Checks.Is(restored.RollbackWarning is null, "once an older copy is saved on purpose, it is no longer reported");
+
+        File.WriteAllBytes(path, current2);
+        using (var superseded = VaultSession.Open(path, "pw", null))
+            Checks.Is(superseded.RollbackWarning is not null, "the version that save replaced now counts as older too");
+    }
+
+    private static void SaveBeforeLock(string dir)
+    {
+        Checks.Section("Vault - unsaved changes at an idle lock");
+        var path = NewPath(dir);
+        VaultSession.Create(path, "pw", null, Fast).Dispose();
+        using (var vault = VaultSession.Open(path, "pw", null))
+        {
+            vault.Document.Entries.Add(new VaultEntry { Title = "pending" });
+            vault.MarkDirty();
+            Checks.Is(vault.SaveBeforeLock() == vault.Path && !vault.IsDirty, "with no conflict they are saved to the vault");
+        }
+
+        using var laptop = VaultSession.Open(path, "pw", null);
+        using (var desktop = VaultSession.Open(path, "pw", null))
+        {
+            desktop.Document.Entries.Add(new VaultEntry { Title = "from desktop" });
+            desktop.Save();
+        }
+        laptop.Document.Entries.Add(new VaultEntry { Title = "from laptop" });
+        laptop.MarkDirty();
+        var written = laptop.SaveBeforeLock();
+        Checks.Is(written != laptop.Path, "after another device saved, they go to a copy, not over the other device's version");
+        using (var check = VaultSession.Open(path, "pw", null))
+            Checks.Is(check.Document.Entries.All(e => e.Title != "from laptop"), "the other device's version is left as it was");
+        using (var copy = VaultSession.Open(written, "pw", null))
+            Checks.Is(copy.Document.Entries.Any(e => e.Title == "from laptop"), "the copy opens with the same password and holds the changes");
+        Checks.Is(laptop.FindPossibleConflictCopies().Contains(written), "the copy is pointed out as a possible conflict copy");
+    }
+
+    private static void OwnerOnlyFiles(string dir)
+    {
+        Checks.Section("Vault - files only their owner can read");
+        if (OperatingSystem.IsWindows())
+        {
+            Checks.Skip("Unix file modes (Windows files inherit the folder's ACL)");
+            return;
+        }
+        const UnixFileMode ownerOnly = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+        var keyPath = Path.Combine(dir, "mode" + KeyFile.Extension);
+        var digest = KeyFile.Create(keyPath);
+        var path = NewPath(dir);
+        using (var vault = VaultSession.Create(path, "pw", digest, Fast))
+        {
+            vault.MarkDirty();
+            vault.Save();
+        }
+        var backup = Directory.GetFiles(path + ".backups").Single();
+        Checks.Equal(ownerOnly.ToString(), File.GetUnixFileMode(keyPath).ToString(), "a new key file is 0600");
+        Checks.Equal(ownerOnly.ToString(), File.GetUnixFileMode(path).ToString(), "the vault is 0600");
+        Checks.Equal(ownerOnly.ToString(), File.GetUnixFileMode(backup).ToString(), "a backup is 0600");
+        Checks.Equal((ownerOnly | UnixFileMode.UserExecute).ToString(), File.GetUnixFileMode(path + ".backups").ToString(), "the backups folder is 0700");
+        Checks.Equal(ownerOnly.ToString(), File.GetUnixFileMode(RevisionLedger.FilePath).ToString(), "the revision ledger is 0600");
     }
 
     private static void Unicode(string dir)

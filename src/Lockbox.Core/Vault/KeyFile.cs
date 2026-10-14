@@ -11,13 +11,13 @@ public static class KeyFile
     public const int MaxSize = 1024 * 1024;
     public const string Extension = ".lbxkey";
 
-    /// <summary>Write 64 random bytes to a new file (never overwrites) and return its digest.</summary>
+    /// <summary>Write 64 random bytes to a new owner-only file (never overwrites) and return its digest.</summary>
     public static byte[] Create(string path)
     {
         var bytes = RandomNumberGenerator.GetBytes(64);
         try
         {
-            using (var stream = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+            using (var stream = PrivateFiles.Create(path, FileMode.CreateNew))
             {
                 stream.Write(bytes);
                 stream.Flush(flushToDisk: true);

@@ -10,9 +10,11 @@ namespace Lockbox.Web;
 /// </summary>
 /// <remarks>
 /// <list type="bullet">
-///   <item><b>Launch link.</b> The terminal prints/opens <c>/login?t=&lt;random&gt;</c>. The
-///   token works once; it is exchanged for an HttpOnly, SameSite=Strict session cookie, so a
-///   copy of the link left in browser history is useless.</item>
+///   <item><b>Launch link.</b> The terminal prints <c>/login?t=&lt;random&gt;</c>, and the
+///   browser is opened on an owner-only file that redirects there - never on the link itself,
+///   because other users of the machine can read process command lines. The token works
+///   once; it is exchanged for an HttpOnly, SameSite=Strict session cookie, so a copy of the
+///   link left in browser history is useless.</item>
 ///   <item><b>Host header</b> must be exactly <c>127.0.0.1:&lt;port&gt;</c> - defeats DNS
 ///   rebinding, where a hostile site re-points its own name at 127.0.0.1.</item>
 ///   <item><b>API calls</b> need the session cookie, an <c>X-Lockbox: 1</c> header and, if the
@@ -33,6 +35,9 @@ internal sealed class LaunchGate
 
     /// <summary>Set once Kestrel has bound its port.</summary>
     public string ExpectedHost { get; set; } = "";
+
+    /// <summary>Called once the launch link has been used, e.g. to delete the launch file.</summary>
+    public Action? LoggedIn { get; set; }
 
     public string LaunchPath => $"/login?t={_launchToken}";
 
@@ -113,6 +118,7 @@ internal sealed class LaunchGate
             session = _sessionToken = NewToken();
         }
 
+        LoggedIn?.Invoke();
         context.Response.Cookies.Append(CookieName, session, new CookieOptions
         {
             HttpOnly = true,
@@ -120,8 +126,12 @@ internal sealed class LaunchGate
             Path = "/",
             IsEssential = true,
         });
-        context.Response.Redirect("/", permanent: false);
-        return Task.CompletedTask;
+        // A page that moves itself on, not a 302: when the link was opened from the launch
+        // file, a redirect would still count as a cross-site navigation and the browser would
+        // withhold the SameSite=Strict cookie from "/". A meta refresh starts a new, same-site one.
+        context.Response.ContentType = "text/html; charset=utf-8";
+        return context.Response.WriteAsync(
+            "<!doctype html><meta charset=\"utf-8\"><meta http-equiv=\"refresh\" content=\"0;url=/\"><title>Lockbox</title>");
     }
 
     private bool HasSession(HttpContext context)

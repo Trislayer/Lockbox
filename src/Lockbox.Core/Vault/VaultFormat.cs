@@ -184,14 +184,8 @@ public static class VaultFormat
         var plaintext = new byte[ciphertextLength];
         try
         {
-            using var aes = new AesGcm(dataKey, TagSize);
-            aes.Decrypt(file.Slice(112, NonceSize), file.Slice(HeaderLength, ciphertextLength),
-                file.Slice(HeaderLength + ciphertextLength, TagSize), plaintext, file[..HeaderLength]);
-
-            var jsonLength = BinaryPrimitives.ReadInt32LittleEndian(plaintext);
-            if (jsonLength < 0 || jsonLength > ciphertextLength - 4)
-                throw new VaultFormatException("Vault payload length is out of range.");
-            var document = JsonSerializer.Deserialize(plaintext.AsSpan(4, jsonLength), VaultJson.Default.VaultDocument)
+            var json = DecryptPayload(file, dataKey, plaintext);
+            var document = JsonSerializer.Deserialize(json, VaultJson.Default.VaultDocument)
                 ?? throw new VaultFormatException("Vault payload is empty.");
             return (keys, document);
         }
@@ -216,6 +210,71 @@ public static class VaultFormat
         finally
         {
             CryptographicOperations.ZeroMemory(plaintext);
+        }
+    }
+
+    /// <summary>
+    /// Decrypt the payload into <paramref name="plaintext"/> (file length minus header and
+    /// tag) and return the JSON inside it. Throws <see cref="AuthenticationTagMismatchException"/>
+    /// if <paramref name="dataKey"/> is not the key the file was sealed with.
+    /// </summary>
+    private static Span<byte> DecryptPayload(ReadOnlySpan<byte> file, ReadOnlySpan<byte> dataKey, Span<byte> plaintext)
+    {
+        var ciphertextLength = plaintext.Length;
+        using var aes = new AesGcm(dataKey, TagSize);
+        aes.Decrypt(file.Slice(112, NonceSize), file.Slice(HeaderLength, ciphertextLength),
+            file.Slice(HeaderLength + ciphertextLength, TagSize), plaintext, file[..HeaderLength]);
+
+        var jsonLength = BinaryPrimitives.ReadInt32LittleEndian(plaintext);
+        if (jsonLength < 0 || jsonLength > ciphertextLength - 4)
+            throw new VaultFormatException("Vault payload length is out of range.");
+        return plaintext.Slice(4, jsonLength);
+    }
+
+    /// <summary>
+    /// Re-encrypt a file sealed under <paramref name="from"/>'s data key so it is sealed under
+    /// <paramref name="to"/> instead, without the password: how backups follow a password
+    /// change. Null if the file was not sealed under <paramref name="from"/>.
+    /// </summary>
+    internal static byte[]? Reseal(ReadOnlySpan<byte> file, VaultKeys from, VaultKeys to)
+    {
+        var plaintext = TryDecrypt(file, from, out var jsonLength);
+        if (plaintext is null) return null;
+        try
+        {
+            return SealJson(to, plaintext.AsSpan(4, jsonLength));
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(plaintext);
+        }
+    }
+
+    /// <summary>True if <paramref name="file"/> is a vault whose payload opens with these keys' data key.</summary>
+    internal static bool IsSealedUnder(ReadOnlySpan<byte> file, VaultKeys keys)
+    {
+        var plaintext = TryDecrypt(file, keys, out _);
+        if (plaintext is null) return false;
+        CryptographicOperations.ZeroMemory(plaintext);
+        return true;
+    }
+
+    /// <summary>The decrypted, padded payload (JSON at offset 4), or null if it does not open with this data key.</summary>
+    private static byte[]? TryDecrypt(ReadOnlySpan<byte> file, VaultKeys keys, out int jsonLength)
+    {
+        jsonLength = 0;
+        byte[] plaintext = [];
+        try
+        {
+            ReadHeader(file);
+            plaintext = new byte[file.Length - HeaderLength - TagSize];
+            jsonLength = DecryptPayload(file, keys.DataKey, plaintext).Length;
+            return plaintext;
+        }
+        catch (Exception e) when (e is VaultFormatException or AuthenticationTagMismatchException)
+        {
+            CryptographicOperations.ZeroMemory(plaintext);
+            return null;
         }
     }
 
