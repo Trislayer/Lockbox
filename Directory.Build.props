@@ -1,0 +1,16 @@
+<Project>
+
+  <!-- Shared by every project. Lockbox takes no NuGet dependencies: everything is built on
+       the .NET base class library (System.Security.Cryptography for AES-GCM, HKDF and
+       SHA-256; Argon2id and BLAKE2b are implemented in Lockbox.Core). -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <Deterministic>true</Deterministic>
+  </PropertyGroup>
+
+</Project>

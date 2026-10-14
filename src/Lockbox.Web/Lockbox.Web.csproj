@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <!-- `lockbox-ui`: the vault in a browser tab, served from this machine only.
+       ASP.NET Core comes from the shared framework (a FrameworkReference, not a NuGet
+       package). The page, script and stylesheet are embedded, so the published output is
+       one native executable:
+         dotnet publish src/Lockbox.Web -c Release -r win-x64 -->
+
+  <PropertyGroup>
+    <RootNamespace>Lockbox.Web</RootNamespace>
+    <AssemblyName>lockbox-ui</AssemblyName>
+    <Version>0.1.0</Version>
+    <PublishAot>true</PublishAot>
+    <OptimizationPreference>Speed</OptimizationPreference>
+    <StackTraceSupport>false</StackTraceSupport>
+    <!-- No appsettings, no wwwroot: nothing beside the executable to tamper with. -->
+    <EnableDefaultContentItems>false</EnableDefaultContentItems>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Lockbox.Core\Lockbox.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="ui\*" LogicalName="ui/%(Filename)%(Extension)" />
+  </ItemGroup>
+
+</Project>

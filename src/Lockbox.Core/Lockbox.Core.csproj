@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The vault: file format, crypto, entries, saving. Everything the CLI and the web UI
+       share, and the only place secrets are encrypted or decrypted. -->
+
+  <PropertyGroup>
+    <RootNamespace>Lockbox.Core</RootNamespace>
+    <IsAotCompatible>true</IsAotCompatible>
+    <!-- LibraryImport (source-generated P/Invoke) for the Windows clipboard. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Lockbox.Checks" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- BIP39 English list (2048 words, 11 bits each), for generated passphrases. -->
+    <EmbeddedResource Include="Resources\bip39-english.txt" LogicalName="Lockbox.Core.bip39-english.txt" />
+  </ItemGroup>
+
+</Project>

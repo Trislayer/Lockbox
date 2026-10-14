@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>Lockbox</title>
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/app.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+
+  <!-- Locked: open an existing vault or create one -->
+  <main id="lock-view" class="lock" hidden>
+    <section class="card lock-card">
+      <header class="brand">
+        <img src="/icon.svg" alt="" width="36" height="36">
+        <div>
+          <h1>Lockbox</h1>
+          <p class="muted">Encrypted on this device. The file can live anywhere.</p>
+        </div>
+      </header>
+
+      <div class="tabs" role="tablist">
+        <button type="button" role="tab" id="tab-open" aria-selected="true">Open vault</button>
+        <button type="button" role="tab" id="tab-create" aria-selected="false">New vault</button>
+      </div>
+
+      <form id="open-form" autocomplete="off">
+        <label>Vault file
+          <input id="open-path" placeholder="G:\My Drive\vault.lbx" spellcheck="false" required>
+        </label>
+        <p id="open-path-info" class="hint"></p>
+        <label id="open-keyfile-row" hidden>Key file
+          <input id="open-keyfile" placeholder="C:\Users\you\vault.lbxkey" spellcheck="false">
+        </label>
+        <label>Master password
+          <input id="open-password" type="password" autocomplete="off" required>
+        </label>
+        <button class="primary" type="submit" id="open-submit">Unlock</button>
+      </form>
+
+      <form id="create-form" autocomplete="off" hidden>
+        <label>New vault file
+          <input id="create-path" placeholder="G:\My Drive\vault.lbx" spellcheck="false" required>
+        </label>
+        <p class="hint">Put it in your Google Drive or iCloud Drive folder to sync it, or anywhere to carry it by hand.</p>
+        <label>Master password
+          <input id="create-password" type="password" autocomplete="new-password" required minlength="12">
+        </label>
+        <label>Confirm master password
+          <input id="create-confirm" type="password" autocomplete="new-password" required>
+        </label>
+        <p class="hint">It cannot be recovered. Suggestion: <code id="create-suggestion"></code>
+          <button type="button" class="link" id="create-suggest">another</button></p>
+        <fieldset>
+          <legend>Key file (optional second factor)</legend>
+          <label class="radio"><input type="radio" name="create-kf" value="none" checked> None</label>
+          <label class="radio"><input type="radio" name="create-kf" value="create"> Create a new key file</label>
+          <label class="radio"><input type="radio" name="create-kf" value="use"> Use an existing file</label>
+          <input id="create-keyfile" placeholder="C:\Users\you\vault.lbxkey" spellcheck="false" hidden>
+          <p class="hint">A key file kept off the cloud makes a stolen vault file useless on its own. You must copy it to every device yourself, and back it up.</p>
+        </fieldset>
+        <button class="primary" type="submit" id="create-submit">Create vault</button>
+      </form>
+
+      <p id="lock-error" class="error" role="alert"></p>
+      <p id="lock-message" class="notice" role="status"></p>
+    </section>
+  </main>
+
+  <!-- Unlocked -->
+  <div id="main-view" class="app" hidden>
+    <header class="topbar">
+      <div class="file">
+        <img src="/icon.svg" alt="" width="24" height="24">
+        <span id="vault-path" class="path"></span>
+        <span id="dirty-badge" class="badge" hidden>Unsaved</span>
+      </div>
+      <div class="actions">
+        <button type="button" id="save-btn" class="primary">Save</button>
+        <button type="button" id="info-btn">Vault</button>
+        <button type="button" id="lock-btn">Lock</button>
+        <button type="button" id="quit-btn" class="ghost">Quit</button>
+      </div>
+    </header>
+
+    <div id="banner-external" class="banner warn" hidden>
+      <span>The vault file changed since you opened it, probably saved from another device.</span>
+      <button type="button" id="banner-reload">Reload it</button>
+    </div>
+    <div id="banner-conflict" class="banner warn" hidden></div>
+    <div id="banner-message" class="banner" hidden></div>
+
+    <div class="panes">
+      <aside class="list-pane">
+        <div class="list-tools">
+          <input id="search" type="search" placeholder="Search" spellcheck="false" autocomplete="off">
+          <button type="button" id="new-btn" class="primary">New</button>
+        </div>
+        <ul id="entry-list" class="entries"></ul>
+        <p id="list-empty" class="muted pad" hidden>No entries yet.</p>
+      </aside>
+
+      <section class="detail-pane">
+        <p id="detail-empty" class="muted pad">Select an entry, or create one.</p>
+        <form id="entry-form" class="entry" autocomplete="off" hidden>
+          <label>Title <input id="f-title" required spellcheck="false"></label>
+          <label>Username
+            <span class="field-row">
+              <input id="f-username" spellcheck="false" autocomplete="off">
+              <button type="button" class="copy" data-field="username">Copy</button>
+            </span>
+          </label>
+          <label>Password
+            <span class="field-row">
+              <input id="f-password" type="password" autocomplete="new-password" spellcheck="false">
+              <button type="button" id="reveal-btn">Show</button>
+              <button type="button" class="copy" data-field="password">Copy</button>
+            </span>
+          </label>
+          <div class="gen-row">
+            <button type="button" id="gen-btn">Generate</button>
+            <label class="inline">Length <input id="gen-length" type="number" min="8" max="128" value="32"></label>
+            <label class="inline"><input id="gen-symbols" type="checkbox" checked> Symbols</label>
+            <span id="gen-bits" class="muted"></span>
+          </div>
+          <label>URL / host
+            <span class="field-row">
+              <input id="f-url" spellcheck="false">
+              <button type="button" class="copy" data-field="url">Copy</button>
+            </span>
+          </label>
+          <label>Notes <textarea id="f-notes" rows="5" spellcheck="false"></textarea></label>
+          <p id="entry-meta" class="hint"></p>
+          <div class="entry-actions">
+            <button type="submit" class="primary" id="entry-save">Apply</button>
+            <button type="button" id="history-btn">Password history</button>
+            <button type="button" id="delete-btn" class="danger">Delete</button>
+          </div>
+          <ol id="history-list" class="history" hidden></ol>
+        </form>
+      </section>
+    </div>
+  </div>
+
+  <!-- Vault details and master password -->
+  <dialog id="info-dialog">
+    <form method="dialog" class="dialog-body" id="passwd-form" autocomplete="off">
+      <h2>Vault</h2>
+      <dl class="facts">
+        <dt>File</dt><dd id="i-path"></dd>
+        <dt>Encryption</dt><dd id="i-kdf"></dd>
+        <dt>Entries</dt><dd id="i-count"></dd>
+        <dt>Backups</dt><dd id="i-backups"></dd>
+      </dl>
+      <h3>Change master password</h3>
+      <label>Current master password <input id="p-current" type="password" autocomplete="off"></label>
+      <label>New master password <input id="p-new" type="password" autocomplete="new-password" minlength="12"></label>
+      <label>Confirm new master password <input id="p-confirm" type="password" autocomplete="new-password"></label>
+      <fieldset>
+        <legend>Key file</legend>
+        <label class="radio"><input type="radio" name="p-kf" value="keep" checked> Keep as it is</label>
+        <label class="radio"><input type="radio" name="p-kf" value="none"> No key file</label>
+        <label class="radio"><input type="radio" name="p-kf" value="create"> Create a new key file</label>
+        <label class="radio"><input type="radio" name="p-kf" value="use"> Use an existing file</label>
+        <input id="p-keyfile" placeholder="C:\Users\you\vault.lbxkey" spellcheck="false" hidden>
+      </fieldset>
+      <p id="passwd-error" class="error" role="alert"></p>
+      <div class="entry-actions">
+        <button type="button" class="primary" id="passwd-submit">Change and save</button>
+        <button value="cancel" formnovalidate>Close</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Re-enter password (reload) -->
+  <dialog id="reload-dialog">
+    <form method="dialog" class="dialog-body" autocomplete="off">
+      <h2>Reload vault</h2>
+      <p id="reload-warning" class="hint"></p>
+      <label>Master password <input id="reload-password" type="password" autocomplete="off"></label>
+      <p id="reload-error" class="error" role="alert"></p>
+      <div class="entry-actions">
+        <button type="button" class="primary" id="reload-submit">Reload</button>
+        <button value="cancel" formnovalidate>Cancel</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Save conflict -->
+  <dialog id="conflict-dialog">
+    <form method="dialog" class="dialog-body">
+      <h2>Someone else saved first</h2>
+      <p>The vault file changed after you opened it, probably from another device. Saving now would replace that version.</p>
+      <p class="hint">Reload loses your unsaved changes here. Overwrite keeps yours; the other version is kept in the backups folder.</p>
+      <div class="entry-actions">
+        <button type="button" id="conflict-reload">Reload theirs</button>
+        <button type="button" class="danger" id="conflict-force">Overwrite with mine</button>
+        <button value="cancel">Cancel</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" hidden></div>
+</body>
+</html>

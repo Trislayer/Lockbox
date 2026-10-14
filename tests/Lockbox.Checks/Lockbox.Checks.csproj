@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- A plain console exe rather than a test framework (no NuGet): it returns a non-zero
+       exit code on failure and needs no runner. `dotnet run -c Release` - Release because
+       the Argon2id checks run at the real 256 MiB parameters.
+
+       Optional cross-checks run when the tools are on PATH: Python (hashlib.blake2b) and
+       Node 24.7+ (crypto.argon2Sync, which is OpenSSL's Argon2). -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Lockbox.Checks</RootNamespace>
+    <AssemblyName>Lockbox.Checks</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Lockbox.Core\Lockbox.Core.csproj" />
+  </ItemGroup>
+
+</Project>

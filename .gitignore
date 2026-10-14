@@ -1,0 +1,13 @@
+bin/
+obj/
+publish/
+.vs/
+.idea/
+*.user
+*.DotSettings.user
+
+# Never commit a vault, a key file or a vault backup - not even a test one.
+*.lbx
+*.lbx.tmp-*
+*.lbxkey
+*.backups/

@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- `lockbox`: the command-line front end. Publishes as a single native executable:
+         dotnet publish src/Lockbox.Cli -c Release -r win-x64     (or linux-x64, osx-arm64)
+       Native AOT does not cross-compile between operating systems; build each OS's binary
+       on that OS. -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Lockbox.Cli</RootNamespace>
+    <AssemblyName>lockbox</AssemblyName>
+    <Version>0.1.0</Version>
+    <PublishAot>true</PublishAot>
+    <OptimizationPreference>Speed</OptimizationPreference>
+    <StackTraceSupport>false</StackTraceSupport>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Lockbox.Core\Lockbox.Core.csproj" />
+  </ItemGroup>
+
+</Project>
