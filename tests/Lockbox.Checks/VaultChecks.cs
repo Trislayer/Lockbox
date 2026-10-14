@@ -244,8 +244,15 @@ internal static class VaultChecks
         const string composed = "café-über";      // é and ü as single code points (Windows)
         const string decomposed = "café-über";  // e + combining acute, u + combining diaeresis (macOS)
         VaultSession.Create(path, composed, null, Fast).Dispose();
-        using (VaultSession.Open(path, decomposed, null))
+        try
+        {
+            VaultSession.Open(path, decomposed, null).Dispose();
             Checks.Is(true, "a passphrase typed decomposed opens a vault created composed (NFC)");
+        }
+        catch (VaultUnlockException)
+        {
+            Checks.Is(false, "a passphrase typed decomposed opens a vault created composed (NFC) - it was refused");
+        }
     }
 
     private static void RealParameters(string dir)

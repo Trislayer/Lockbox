@@ -17,6 +17,79 @@ internal static class ConventionChecks
         NoNullForgivingOperator(root);
         JsonRespectsNullableAnnotations(root);
         NoPackageReferences(root);
+        InHouseCryptoIsConfined(root);
+        EveryCheckClassIsProvenAndRun(root);
+    }
+
+    /// <summary>
+    /// The one exception to "crypto from the base class library": Argon2id and BLAKE2b, which
+    /// .NET does not ship. They stay in Crypto/, only VaultFormat calls them, and adding a
+    /// file to Crypto/ is a deliberate edit to this list.
+    /// </summary>
+    /// <remarks>Blind spot: a call through reflection, or a type alias (`using X = ...Argon2id`).</remarks>
+    private static void InHouseCryptoIsConfined(string root)
+    {
+        Checks.Section("Conventions - in-house crypto stays in one place");
+        var cryptoFolder = Path.Combine("src", "Lockbox.Core", "Crypto");
+        var files = Corpus(root, "*.cs", cryptoFolder).Select(f => Path.GetFileName(f)).Order(StringComparer.Ordinal).ToList();
+        Checks.Is(files.SequenceEqual(["Argon2id.cs", "Blake2b.cs"]),
+            $"Crypto/ holds exactly Argon2id.cs and Blake2b.cs (found {string.Join(", ", files)}) - a new primitive needs its own vectors in CryptoChecks and an entry here");
+
+        var allowed = new[] { Path.Combine(cryptoFolder, "Argon2id.cs"), Path.Combine(cryptoFolder, "Blake2b.cs"), Path.Combine("src", "Lockbox.Core", "Vault", "VaultFormat.cs") };
+        var hits = new List<string>();
+        foreach (var file in Corpus(root, "*.cs", "src"))
+        {
+            var relative = Relative(root, file);
+            if (allowed.Contains(relative, StringComparer.OrdinalIgnoreCase)) continue;
+            var code = CodeOnly(File.ReadAllText(file));
+            foreach (var name in new[] { "Argon2id", "Blake2b" })
+                if (ContainsIdentifier(code, name))
+                    hits.Add($"{relative} uses {name}");
+        }
+        Report(hits, "only VaultFormat.cs calls the in-house primitives",
+            "go through VaultFormat / VaultSession instead of calling Argon2id or Blake2b directly");
+    }
+
+    /// <summary>Every check class has a recorded failure proof in Proofs.cs and is run by Program.cs.</summary>
+    private static void EveryCheckClassIsProvenAndRun(string root)
+    {
+        Checks.Section("Conventions - every check class has been seen to fail");
+        var classes = new List<string>();
+        foreach (var file in Corpus(root, "*.cs", "tests"))
+        {
+            var code = CodeOnly(File.ReadAllText(file));
+            var at = 0;
+            while ((at = code.IndexOf("static class ", at, StringComparison.Ordinal)) >= 0)
+            {
+                at += "static class ".Length;
+                var end = at;
+                while (end < code.Length && (char.IsLetterOrDigit(code[end]) || code[end] == '_')) end++;
+                var name = code[at..end];
+                if (name.EndsWith("Checks", StringComparison.Ordinal) && name != "Checks") classes.Add(name);
+            }
+        }
+        Checks.Is(classes.Count >= 4, $"found the check classes ({classes.Count}, expected at least 4)");
+
+        var program = CodeOnly(File.ReadAllText(Path.Combine(root, "tests", "Lockbox.Checks", "Program.cs")));
+        var unproven = classes.Where(c => !Proofs.Recorded.ContainsKey(c)).ToList();
+        var ghosts = Proofs.Recorded.Keys.Where(k => !classes.Contains(k)).ToList();
+        var unrun = classes.Where(c => !ContainsIdentifier(program, $"nameof({c})")).ToList();
+        Report(unproven, "every check class has a recorded proof",
+            "break the code the class defends, watch it go red, restore, and add the result to Proofs.Recorded");
+        Report(ghosts, "every recorded proof names a class that exists", "remove the entry from Proofs.Recorded");
+        Report(unrun, "every check class is run by Program.cs", "add Checks.Group(nameof(...), ....Run) to Program.cs");
+    }
+
+    private static bool ContainsIdentifier(string code, string name)
+    {
+        for (var at = code.IndexOf(name, StringComparison.Ordinal); at >= 0; at = code.IndexOf(name, at + 1, StringComparison.Ordinal))
+        {
+            var before = at == 0 ? ' ' : code[at - 1];
+            var after = at + name.Length < code.Length ? code[at + name.Length] : ' ';
+            if (!(char.IsLetterOrDigit(before) || before == '_') && !(char.IsLetterOrDigit(after) || after == '_'))
+                return true;
+        }
+        return false;
     }
 
     /// <summary>The `!` scanner itself: it must flag every planted use and nothing that only looks like one.</summary>

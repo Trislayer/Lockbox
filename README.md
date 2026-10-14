@@ -10,7 +10,12 @@ dependencies**.
 | `src/Lockbox.Core` | File format, crypto, entries, saving. The only code that encrypts or decrypts. |
 | `src/Lockbox.Cli` | `lockbox` - command-line front end (3 MB native exe). |
 | `src/Lockbox.Web` | `lockbox-ui` - the same vault in a browser tab, served on 127.0.0.1 only (12 MB native exe). |
-| `tests/Lockbox.Checks` | Plain console test runner (`dotnet run -c Release`). |
+| `tests/Lockbox.Checks` | Plain console test runner (`dotnet run -c Release`): crypto vectors, vault behaviour, and convention lints. |
+
+Conventions the build holds (each is a lint in `tests/Lockbox.Checks/ConventionChecks.cs`):
+nullable reference types on, with nullable warnings as compile errors and no `!`
+operator; JSON refuses nulls in non-nullable members; no NuGet packages; and every check
+class has a recorded proof that it can fail (`Proofs.cs`).
 
 ## Use
 
@@ -46,7 +51,8 @@ packs - toolchain, not dependencies; nothing third-party is linked in.
   password guess against a stolen file costs 512 MiB and roughly half a second.
   Implemented in `Lockbox.Core/Crypto` together with BLAKE2b, because the base class library
   has neither; pinned by the RFC test vectors and by agreement with OpenSSL (via Node) and
-  Python's hashlib in `Lockbox.Checks`.
+  Python's hashlib in `Lockbox.Checks`. They are the only crypto not taken from .NET itself:
+  a lint keeps them in `Crypto/` and lets only `VaultFormat.cs` call them.
 - **Key file (optional):** its SHA-256 is mixed in with HKDF-SHA256. Keep it off the cloud
   and back it up; without it the vault cannot be opened.
 - **Encryption:** a random 256-bit data key, wrapped by the password-derived key with

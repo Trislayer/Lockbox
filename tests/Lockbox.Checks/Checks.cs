@@ -10,6 +10,22 @@ internal static class Checks
 
     public static void Section(string name) => Console.WriteLine($"\n== {name}");
 
+    /// <summary>
+    /// Run a group of checks. An exception that escapes it is a FAIL, and the groups after it
+    /// still run, so one broken group cannot hide the state of the rest.
+    /// </summary>
+    public static void Group(string name, Action run)
+    {
+        try
+        {
+            run();
+        }
+        catch (Exception e)
+        {
+            Is(false, $"{name} threw {e.GetType().Name}: {e.Message} - the checks after it in {name} did not run");
+        }
+    }
+
     public static void Is(bool condition, string description)
     {
         if (condition)
