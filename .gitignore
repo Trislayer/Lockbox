@@ -11,3 +11,8 @@ publish/
 *.lbx.tmp-*
 *.lbxkey
 *.backups/
+
+# Desktop app (desktop/): dependencies, the staged server, packaged output.
+desktop/node_modules/
+desktop/server/
+desktop/dist/

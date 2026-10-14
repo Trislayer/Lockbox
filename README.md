@@ -3,13 +3,16 @@
 A password vault in a single encrypted file. Put the file in Google Drive or iCloud Drive
 (or carry it by hand); open it with one master password, optionally plus a key file that
 never goes near the cloud. C#/.NET 10, Native AOT, Windows/macOS/Linux, **no NuGet
-dependencies**.
+dependencies**. The optional desktop app (`desktop/`) is an Electron window around
+`lockbox-ui`; it is the one part with third-party code (Electron and its Chromium), and it
+holds no vault logic.
 
 | Project | What it is |
 | --- | --- |
 | `src/Lockbox.Core` | File format, crypto, entries, saving. The only code that encrypts or decrypts. |
 | `src/Lockbox.Cli` | `lockbox` - command-line front end (3 MB native exe). |
-| `src/Lockbox.Web` | `lockbox-ui` - the same vault in a browser tab, served on 127.0.0.1 only (12 MB native exe). |
+| `src/Lockbox.Web` | `lockbox-ui` - the same vault in a browser tab, served on 127.0.0.1 only (11 MB native exe). |
+| `desktop` | `Lockbox` app - Electron window that starts the bundled `lockbox-ui --hosted` and shows its page: no browser extensions, no link to copy. |
 | `tests/Lockbox.Checks` | Plain console test runner (`dotnet run -c Release`): crypto vectors, vault behaviour, and convention lints. |
 
 Conventions the build holds (each is a lint in `tests/Lockbox.Checks/ConventionChecks.cs`):
@@ -49,6 +52,22 @@ says `'vswhere.exe' is not recognized`, add `C:\Program Files (x86)\Microsoft Vi
 Studio\Installer` to `PATH`. Publishing downloads the SDK's own AOT compiler and runtime
 packs - toolchain, not dependencies; nothing third-party is linked in.
 
+Desktop app (Node 24+), after publishing `lockbox-ui` for this machine into `publish/<rid>`:
+
+```text
+cd desktop
+npm ci
+npm start       # run from source
+npm run dist    # package: .dmg/.zip (macOS), setup .exe (Windows), AppImage (Linux) in desktop/dist
+```
+
+The macOS app is ad-hoc signed, not notarized: one downloaded from a release needs
+right-click > Open the first time. Electron versions are pinned exactly; update them for
+Chromium security fixes.
+
+CI (`.github/workflows/build.yml`) runs the checks and builds all of the above on macOS,
+Windows and Linux runners for every push, and attaches them to a release for `v*` tags.
+
 ## How the file is protected
 
 - **Key derivation:** Argon2id (RFC 9106), 512 MiB, 4 passes, 4 lanes by default - every
@@ -87,8 +106,8 @@ packs - toolchain, not dependencies; nothing third-party is linked in.
 - **Malware running as you.** It can log keystrokes or read the unlocked vault from memory.
   .NET cannot reliably wipe strings, so decrypted entries stay in managed memory until the
   process exits; the data key itself is zeroed on lock.
-- **The browser (`lockbox-ui`).** Extensions with access to all sites can read the page. Use a
-  browser profile without extensions, or the CLI, for the most sensitive work.
+- **The browser (`lockbox-ui`).** Extensions with access to all sites can read the page. Use the
+  desktop app, a browser profile without extensions, or the CLI for the most sensitive work.
 - **Copies made before a password change.** Your cloud provider's version history and trash
   (Google Drive keeps both for 30 days), or a copy someone already downloaded, still open with
   the old password. If it leaked, assume those copies are readable.

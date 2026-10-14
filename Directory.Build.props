@@ -17,11 +17,12 @@
     <Deterministic>true</Deterministic>
   </PropertyGroup>
 
-  <!-- macOS Native AOT: no dsymutil/strip pass. Microsoft's prebuilt
+  <!-- macOS Native AOT: no dsymutil pass. Microsoft's prebuilt
        libSystem.Security.Cryptography.Native.Apple.a (Swift/CryptoKit) carries debug references
        to clang module caches on Microsoft's build machine, so dsymutil warns twice on every
-       publish ("...Foundation-*.pcm: No such file or directory"). Skipping it gives the same
-       size executable and no 40 MB .dSYM, which nothing here uses. -->
+       publish ("...Foundation-*.pcm: No such file or directory"), and the 40 MB .dSYM it makes
+       is not used here. StripSymbols=false turns off dsymutil and strip together, so
+       Directory.Build.targets runs strip on its own (36 MB -> 10 MB). -->
   <PropertyGroup Condition="$(RuntimeIdentifier.StartsWith('osx'))">
     <StripSymbols>false</StripSymbols>
   </PropertyGroup>

@@ -8,4 +8,11 @@
           CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
+  <!-- The strip half of the macOS symbol pass that Directory.Build.props turns off (it keeps
+       dsymutil off): the same command the Native AOT targets run after linking. -->
+  <Target Name="StripMacNativeBinary" AfterTargets="LinkNative"
+          Condition="$(RuntimeIdentifier.StartsWith('osx')) and '$(PublishAot)' == 'true' and '$(NativeBinary)' != ''">
+    <Exec Command="strip -no_code_signature_warning -x &quot;$(NativeBinary)&quot;" />
+  </Target>
+
 </Project>

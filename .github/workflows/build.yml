@@ -1,0 +1,101 @@
+# Build and check Lockbox on each OS it ships for. Native AOT does not cross-compile between
+# operating systems, so every platform's binaries are built on that platform's runner.
+#
+# Every push: Lockbox.Checks, the CLI and lockbox-ui (native), and the desktop app (Electron),
+# uploaded as one artifact per platform. A pushed v* tag also attaches them to a GitHub release.
+#
+# Actions are pinned to full commit SHAs (tag in the comment) so a moved tag cannot change
+# what runs here.
+
+name: Build
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.rid }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-latest, rid: osx-arm64 }
+          - { os: windows-latest, rid: win-x64 }
+          - { os: ubuntu-latest, rid: linux-x64 }
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: "10.0.x"
+
+      # Before the checks too: Node 24.7+ is their OpenSSL Argon2id cross-check.
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Native AOT prerequisites
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y clang zlib1g-dev
+
+      - name: Checks
+        run: dotnet run --project tests/Lockbox.Checks -c Release
+
+      - name: Publish lockbox and lockbox-ui
+        run: |
+          dotnet publish src/Lockbox.Cli -c Release -r ${{ matrix.rid }} -o publish/${{ matrix.rid }}
+          dotnet publish src/Lockbox.Web -c Release -r ${{ matrix.rid }} -o publish/${{ matrix.rid }}
+
+      # tar keeps the executable bit, which artifacts and release downloads would otherwise lose.
+      - name: Archive the command-line tools
+        run: |
+          cd publish/${{ matrix.rid }}
+          tar -czf ../../lockbox-${{ matrix.rid }}.tar.gz $(ls lockbox lockbox.exe lockbox-ui lockbox-ui.exe 2>/dev/null) THIRD-PARTY-NOTICES.md
+
+      - name: Desktop app
+        working-directory: desktop
+        run: |
+          npm ci
+          npm run dist
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: lockbox-${{ matrix.rid }}
+          if-no-files-found: error
+          path: |
+            lockbox-${{ matrix.rid }}.tar.gz
+            desktop/dist/*.dmg
+            desktop/dist/*-mac.zip
+            desktop/dist/*-setup.exe
+            desktop/dist/*.AppImage
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          find artifacts -type f -print
+          gh release create "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" --generate-notes $(find artifacts -type f)

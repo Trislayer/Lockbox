@@ -5,13 +5,19 @@ using Lockbox.Core;
 using Lockbox.Core.Vault;
 using Lockbox.Web;
 
-// lockbox-ui [vault.lbx] [--keyfile <path>] [--port N] [--no-browser]
+// lockbox-ui [vault.lbx] [--keyfile <path>] [--port N] [--no-browser] [--hosted]
 // Serves the vault UI on http://127.0.0.1:<port> to this machine's browser only, opens it,
 // and runs until Quit in the page, Q or Ctrl+C in the terminal.
+//
+// --hosted: run under the desktop app (desktop/), which owns stdin and stdout. Each launch
+// link goes to stdout as one "url <link>" line - a pipe only the parent reads - and no browser
+// is opened. On stdin, "link" asks for a fresh link; end of input (the parent quit or crashed)
+// locks the vault and stops, so the server never outlives its window.
 
 string? vaultArg = null, keyFileArg = null;
 var port = 0;
 var openBrowser = true;
+var hosted = false;
 for (var i = 0; i < args.Length; i++)
 {
     switch (args[i])
@@ -25,8 +31,9 @@ for (var i = 0; i < args.Length; i++)
             }
             break;
         case "--no-browser": openBrowser = false; break;
+        case "--hosted": hosted = true; openBrowser = false; break;
         case "-h" or "--help":
-            Console.WriteLine("lockbox-ui [vault.lbx] [--keyfile <path>] [--port N] [--no-browser]");
+            Console.WriteLine("lockbox-ui [vault.lbx] [--keyfile <path>] [--port N] [--no-browser] [--hosted]");
             return 0;
         default: vaultArg = args[i]; break;
     }
@@ -158,6 +165,12 @@ gate.ExpectedHost = new Uri(origin).Authority;
 void Announce(string launchPath)
 {
     var url = origin + launchPath;
+    if (hosted)
+    {
+        Console.WriteLine($"url {url}");
+        Console.Out.Flush();
+        return;
+    }
     Console.WriteLine($"Lockbox UI: {url}");
     Console.WriteLine("  (single-use link; L = new link, Q = lock and quit)");
     if (launchFile is null) return;
@@ -173,7 +186,17 @@ void Announce(string launchPath)
 Console.WriteLine($"lockbox-ui {Assembly.GetExecutingAssembly().GetName().Version?.ToString(3)} - listening on {origin} (this machine only)");
 Announce(gate.LaunchPath);
 
-if (!Console.IsInputRedirected)
+if (hosted)
+{
+    var lifetime = app.Services.GetRequiredService<IHostApplicationLifetime>();
+    _ = Task.Run(() =>
+    {
+        while (Console.ReadLine() is { } command)
+            if (command.Trim() == "link") Announce(gate.Reissue());
+        lifetime.StopApplication();
+    });
+}
+else if (!Console.IsInputRedirected)
 {
     var lifetime = app.Services.GetRequiredService<IHostApplicationLifetime>();
     _ = Task.Run(() =>
