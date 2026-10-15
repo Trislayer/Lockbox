@@ -6,7 +6,7 @@
 // travels over the child's stdout pipe, never on a command line or through a file.
 "use strict";
 
-const { app, BrowserWindow, Menu, dialog, session } = require("electron");
+const { app, BrowserWindow, Menu, dialog, ipcMain, session } = require("electron");
 const { spawn } = require("node:child_process");
 const path = require("node:path");
 const readline = require("node:readline");
@@ -33,6 +33,7 @@ if (!app.requestSingleInstanceLock()) {
 
 function start() {
   harden(session.fromPartition(PARTITION));
+  ipcMain.handle("pick-path", pickPath);
   Menu.setApplicationMenu(buildMenu());
 
   const executable = serverExecutable(app.isPackaged ? process.resourcesPath : null);
@@ -69,6 +70,7 @@ function openWindow(url) {
       nodeIntegration: false,
       spellcheck: false, // never send what is typed (passwords included) to a spellchecker
       devTools: !app.isPackaged,
+      preload: path.join(__dirname, "preload.js"),
     },
   });
   win.once("ready-to-show", () => win.show());
@@ -89,6 +91,39 @@ function openWindow(url) {
   });
 
   win.loadURL(url);
+}
+
+const FILTERS = {
+  vault: [{ name: "Lockbox vault", extensions: ["lbx"] }, { name: "All files", extensions: ["*"] }],
+  // Any file up to 1 MiB works as a key file, so an existing one may have any name.
+  keyfile: [{ name: "Key file", extensions: ["lbxkey"] }, { name: "All files", extensions: ["*"] }],
+};
+
+/** A native open or save dialog for one of the page's path fields; resolves to the chosen path or null. */
+async function pickPath(event, request) {
+  if (!win || origin === null || new URL(event.senderFrame.url).origin !== origin) return null;
+  const kind = request?.kind === "keyfile" ? "keyfile" : "vault";
+  const filters = FILTERS[kind];
+  if (request?.save === true) {
+    // A key file starts in the home folder, not Documents: Documents is often synced to the
+    // cloud (iCloud on macOS, OneDrive on Windows), which would put it beside the vault.
+    const defaultPath = kind === "vault"
+      ? path.join(app.getPath("documents"), "vault.lbx")
+      : path.join(app.getPath("home"), "vault.lbxkey");
+    const result = await dialog.showSaveDialog(win, {
+      title: kind === "vault" ? "New vault file" : "New key file",
+      defaultPath,
+      filters: filters.slice(0, 1),
+      properties: ["createDirectory", "showOverwriteConfirmation"],
+    });
+    return result.canceled ? null : result.filePath ?? null;
+  }
+  const result = await dialog.showOpenDialog(win, {
+    title: kind === "vault" ? "Open vault" : "Choose key file",
+    filters,
+    properties: ["openFile"],
+  });
+  return result.canceled ? null : result.filePaths[0] ?? null;
 }
 
 /** Only the local server, ever: no other navigation, windows, permissions or requests. */

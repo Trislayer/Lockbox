@@ -12,7 +12,7 @@ holds no vault logic.
 | `src/Lockbox.Core` | File format, crypto, entries, saving. The only code that encrypts or decrypts. |
 | `src/Lockbox.Cli` | `lockbox` - command-line front end (3 MB native exe). |
 | `src/Lockbox.Web` | `lockbox-ui` - the same vault in a browser tab, served on 127.0.0.1 only (11 MB native exe). |
-| `desktop` | `Lockbox` app - Electron window that starts the bundled `lockbox-ui --hosted` and shows its page: no browser extensions, no link to copy. |
+| `desktop` | `Lockbox` app - Electron window that starts the bundled `lockbox-ui --hosted` and shows its page: no browser extensions, no link to copy. Drop a file on a path field, or use Browse…, instead of typing the path. |
 | `tests/Lockbox.Checks` | Plain console test runner (`dotnet run -c Release`): crypto vectors, vault behaviour, and convention lints. |
 
 Conventions the build holds (each is a lint in `tests/Lockbox.Checks/ConventionChecks.cs`):

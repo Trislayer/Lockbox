@@ -168,3 +168,8 @@ dialog::backdrop { background: rgba(0, 0, 0, .45); }
   .panes { grid-template-columns: 1fr; grid-template-rows: minmax(160px, 40%) 1fr; }
   .list-pane { border-right: 0; border-bottom: 1px solid var(--line); }
 }
+
+/* Path fields: a Browse button in the desktop app, and a highlight while a file is dragged over. */
+fieldset .path-row { margin: 6px 0 8px; }
+fieldset .path-row input { margin: 0; }
+input.drop-target { border-color: var(--accent); background: var(--accent-soft); }

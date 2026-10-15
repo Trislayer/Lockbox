@@ -440,6 +440,63 @@ async function changePassword() {
   }
 }
 
+// ---- file paths --------------------------------------------------------------------------
+
+// The desktop app's preload (desktop/preload.js) adds this: the real path of a dropped file and
+// a native file dialog. A plain browser tab has neither - it never learns where a file lives -
+// so there the path is typed or pasted.
+const desktop = window.lockboxDesktop ?? null;
+
+/** What the dialog for a field offers: an existing vault, a new one, or a key file (existing or new). */
+function pickKind(input) {
+  const kind = input.dataset.pick;
+  if (kind !== "keyfile") return { kind: "vault", save: kind === "new-vault" };
+  const mode = input.id === "create-keyfile" ? radioValue("create-kf") : input.id === "p-keyfile" ? radioValue("p-kf") : "use";
+  return { kind: "keyfile", save: mode === "create" };
+}
+
+async function browse(input) {
+  const { kind, save } = pickKind(input);
+  const path = await desktop.pickPath(kind, save);
+  input.focus(); // cancelled: the field is still there to type or paste into
+  if (path) setPath(input, path);
+}
+
+function setPath(input, path) {
+  input.value = path;
+  input.dispatchEvent(new Event("change", { bubbles: true }));
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
+function wirePathFields() {
+  // A file dropped anywhere else would otherwise be opened in place of the page.
+  for (const type of ["dragover", "drop"]) document.addEventListener(type, (e) => e.preventDefault());
+
+  for (const input of document.querySelectorAll("input[data-pick]")) {
+    const button = document.querySelector(`button.browse[data-for="${input.id}"]`);
+    if (desktop) {
+      button.hidden = false;
+      button.addEventListener("click", () => browse(input).catch((err) => toast(err.message)));
+      // An empty field opens the dialog on click; one with a path in it stays editable.
+      input.addEventListener("click", () => { if (!input.value.trim()) browse(input).catch((err) => toast(err.message)); });
+    }
+    input.addEventListener("dragover", (e) => {
+      if (!e.dataTransfer?.types.includes("Files")) return;
+      e.dataTransfer.dropEffect = "copy";
+      input.classList.add("drop-target");
+    });
+    input.addEventListener("dragleave", () => input.classList.remove("drop-target"));
+    input.addEventListener("drop", (e) => {
+      input.classList.remove("drop-target");
+      const file = e.dataTransfer?.files[0];
+      if (!file) return;
+      const path = desktop?.pathForFile(file);
+      if (path) setPath(input, path);
+      else toast("A browser does not tell the page where a dropped file is. Paste its path, or use the Lockbox desktop app.");
+    });
+  }
+}
+
 // ---- wiring ------------------------------------------------------------------------------
 
 function on(id, event, handler) {
@@ -455,9 +512,9 @@ document.addEventListener("DOMContentLoaded", async () => {
   on("open-path", "change", inspectPath);
   on("create-suggest", "click", suggest);
   document.querySelectorAll('input[name="create-kf"]').forEach((r) =>
-    r.addEventListener("change", () => { $("create-keyfile").hidden = radioValue("create-kf") === "none"; }));
+    r.addEventListener("change", () => { $("create-keyfile-field").hidden = radioValue("create-kf") === "none"; }));
   document.querySelectorAll('input[name="p-kf"]').forEach((r) =>
-    r.addEventListener("change", () => { $("p-keyfile").hidden = !["use", "create"].includes(radioValue("p-kf")); }));
+    r.addEventListener("change", () => { $("p-keyfile-field").hidden = !["use", "create"].includes(radioValue("p-kf")); }));
 
   on("open-form", "submit", async (e) => {
     e.preventDefault();
@@ -500,6 +557,8 @@ document.addEventListener("DOMContentLoaded", async () => {
       $("lock-error").textContent = err.message;
     }
   });
+
+  wirePathFields();
 
   on("search", "input", renderList);
   on("new-btn", "click", newEntry);

@@ -26,6 +26,7 @@
     },
     "files": [
       "main.js",
+      "preload.js",
       "server-path.js",
       "package.json"
     ],

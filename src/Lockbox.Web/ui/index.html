@@ -29,11 +29,17 @@
 
       <form id="open-form" autocomplete="off">
         <label>Vault file
-          <input id="open-path" placeholder="G:\My Drive\vault.lbx" spellcheck="false" required>
+          <span class="field-row path-row" id="open-path-field">
+            <input id="open-path" placeholder="G:\My Drive\vault.lbx" spellcheck="false" required data-pick="vault">
+            <button type="button" class="browse" data-for="open-path" hidden>Browse…</button>
+          </span>
         </label>
         <p id="open-path-info" class="hint"></p>
         <label id="open-keyfile-row" hidden>Key file
-          <input id="open-keyfile" placeholder="C:\Users\you\vault.lbxkey" spellcheck="false">
+          <span class="field-row path-row" id="open-keyfile-field">
+            <input id="open-keyfile" placeholder="C:\Users\you\vault.lbxkey" spellcheck="false" data-pick="keyfile">
+            <button type="button" class="browse" data-for="open-keyfile" hidden>Browse…</button>
+          </span>
         </label>
         <label>Master password
           <input id="open-password" type="password" autocomplete="off" required>
@@ -43,7 +49,10 @@
 
       <form id="create-form" autocomplete="off" hidden>
         <label>New vault file
-          <input id="create-path" placeholder="G:\My Drive\vault.lbx" spellcheck="false" required>
+          <span class="field-row path-row" id="create-path-field">
+            <input id="create-path" placeholder="G:\My Drive\vault.lbx" spellcheck="false" required data-pick="new-vault">
+            <button type="button" class="browse" data-for="create-path" hidden>Browse…</button>
+          </span>
         </label>
         <p class="hint">Put it in your Google Drive or iCloud Drive folder to sync it, or anywhere to carry it by hand.</p>
         <label>Master password
@@ -59,7 +68,10 @@
           <label class="radio"><input type="radio" name="create-kf" value="none" checked> None</label>
           <label class="radio"><input type="radio" name="create-kf" value="create"> Create a new key file</label>
           <label class="radio"><input type="radio" name="create-kf" value="use"> Use an existing file</label>
-          <input id="create-keyfile" placeholder="C:\Users\you\vault.lbxkey" spellcheck="false" hidden>
+          <span class="field-row path-row" id="create-keyfile-field" hidden>
+            <input id="create-keyfile" placeholder="C:\Users\you\vault.lbxkey" spellcheck="false" data-pick="keyfile">
+            <button type="button" class="browse" data-for="create-keyfile" hidden>Browse…</button>
+          </span>
           <p class="hint">A key file kept off the cloud makes a stolen vault file useless on its own. You must copy it to every device yourself, and back it up.</p>
         </fieldset>
         <button class="primary" type="submit" id="create-submit">Create vault</button>
@@ -165,7 +177,10 @@
         <label class="radio"><input type="radio" name="p-kf" value="none"> No key file</label>
         <label class="radio"><input type="radio" name="p-kf" value="create"> Create a new key file</label>
         <label class="radio"><input type="radio" name="p-kf" value="use"> Use an existing file</label>
-        <input id="p-keyfile" placeholder="C:\Users\you\vault.lbxkey" spellcheck="false" hidden>
+        <span class="field-row path-row" id="p-keyfile-field" hidden>
+          <input id="p-keyfile" placeholder="C:\Users\you\vault.lbxkey" spellcheck="false" data-pick="keyfile">
+          <button type="button" class="browse" data-for="p-keyfile" hidden>Browse…</button>
+        </span>
       </fieldset>
       <p id="passwd-error" class="error" role="alert"></p>
       <div class="entry-actions">
