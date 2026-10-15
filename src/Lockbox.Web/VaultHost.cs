@@ -63,9 +63,40 @@ internal sealed class VaultHost : IDisposable
     public InspectResponse Inspect(string path)
     {
         path = Clean(path);
-        if (!File.Exists(path)) return new InspectResponse(false, false, null);
+        if (!File.Exists(path)) return new InspectResponse(false, false, null, null);
         var header = VaultSession.Inspect(path);
-        return new InspectResponse(true, header.RequiresKeyFile, header.Kdf.ToString());
+        var warning = KeyFolder.Where(path)?.Kind == PlaceKind.Downloads
+            ? "It is in Downloads, which tends to get cleared out: move it to a synced folder (iCloud Drive, Google Drive) or wherever you keep it."
+            : null;
+        return new InspectResponse(true, header.RequiresKeyFile, header.Kdf.ToString(), warning);
+    }
+
+    public KeyFileCheckResponse CheckKeyFile(string path)
+    {
+        path = Clean(path);
+        if (path.Length == 0) return new KeyFileCheckResponse(false, null);
+        var warning = KeyFolder.Where(path) switch
+        {
+            null => null,
+            { Kind: PlaceKind.Downloads } => "It is in Downloads, which tends to get cleared out.",
+            { Kind: PlaceKind.Cloud } place => $"It is in {place.Name}, which copies it to the cloud - often next to the vault it should be kept apart from.",
+            var place => $"It is in {place.Name}, which is often synced to the cloud (iCloud, OneDrive).",
+        };
+        return new KeyFileCheckResponse(File.Exists(path), warning);
+    }
+
+    /// <summary>Move an existing key file into <see cref="KeyFolder"/>, or pick the path there for a new one.</summary>
+    public KeyFileRelocateResponse RelocateKeyFile(string path)
+    {
+        path = Clean(Required(path, "Which key file?"));
+        if (File.Exists(path))
+        {
+            var moved = KeyFolder.MoveIn(path);
+            return new KeyFileRelocateResponse(moved,
+                $"Moved to {moved}. Keep a backup of it somewhere offline, and update anything else that still points at the old path.");
+        }
+        var target = KeyFolder.PlaceFor(Path.GetFileName(path) is { Length: > 0 } name ? name : "vault");
+        return new KeyFileRelocateResponse(target, $"The key file will be created in {KeyFolder.FolderPath}.");
     }
 
     public void Unlock(UnlockRequest request)
@@ -88,7 +119,7 @@ internal sealed class VaultHost : IDisposable
         string? createdKeyFile = null;
         if (request.CreateKeyFile)
         {
-            createdKeyFile = Path.GetFullPath(Clean(Required(request.KeyFilePath, "Where should the key file go?")));
+            createdKeyFile = Path.GetFullPath(KeyFile.WithExtension(Clean(Required(request.KeyFilePath, "Where should the key file go?"))));
             digest = KeyFile.Create(createdKeyFile);
         }
         else if (!string.IsNullOrWhiteSpace(request.KeyFilePath))
@@ -153,7 +184,7 @@ internal sealed class VaultHost : IDisposable
                 "keep" => _keyFileDigest,
                 "none" => null,
                 "use" => KeyFile.LoadDigest(Clean(Required(request.KeyFilePath, "Which key file?"))),
-                "create" => KeyFile.Create(created = Path.GetFullPath(Clean(Required(request.KeyFilePath, "Where should the key file go?")))),
+                "create" => KeyFile.Create(created = Path.GetFullPath(KeyFile.WithExtension(Clean(Required(request.KeyFilePath, "Where should the key file go?"))))),
                 _ => throw new ArgumentException("Unknown key file option."),
             };
             vault.ChangeMasterKey(request.NewPassword, digest);

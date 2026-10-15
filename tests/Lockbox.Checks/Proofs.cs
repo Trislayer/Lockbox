@@ -22,7 +22,10 @@ internal static class Proofs
             "No RekeyBackups after a password change: 'no backup opens with the old password' and 3 more red. " +
             "RollbackWarning always null: 'an older version put back in place is reported' and 1 more red. " +
             "PrivateFiles without UnixCreateMode: the key file, vault, backup and ledger 0600 checks red. " +
-            "SaveBeforeLock forcing the save: 'the other device's version is left as it was' and 2 more red.",
+            "SaveBeforeLock forcing the save: 'the other device's version is left as it was' and 2 more red. " +
+            "KeyFolder.MoveIn without deleting the original: 'the original is gone after the move' red. " +
+            "IsUnder without the trailing separator: 'a folder merely named like Downloads is not' red. " +
+            "WithExtension returning the path as given: 'gets .lbxkey' and 'placed under a free name, with the extension' red.",
         [nameof(GeneratorChecks)] =
             "No Fisher-Yates shuffle: 'the first character is drawn from the whole alphabet' red (26 distinct).",
         [nameof(ConventionChecks)] =

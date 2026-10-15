@@ -7,7 +7,13 @@ namespace Lockbox.Web;
 // HistoryResponse and the requests that set them - never in lists or entry details.
 
 internal sealed record InspectRequest(string Path);
-internal sealed record InspectResponse(bool Exists, bool RequiresKeyFile, string? Kdf);
+/// <param name="Warning">Set when the vault is somewhere it may not stay, such as Downloads.</param>
+internal sealed record InspectResponse(bool Exists, bool RequiresKeyFile, string? Kdf, string? Warning);
+/// <param name="Warning">Set when the key file is (or would be) in Downloads, on the Desktop, in Documents or a cloud folder.</param>
+internal sealed record KeyFileCheckResponse(bool Exists, string? Warning);
+internal sealed record KeyFilePathRequest(string Path);
+/// <param name="Path">Where the key file now is (moved), or where to create it (it did not exist yet).</param>
+internal sealed record KeyFileRelocateResponse(string Path, string Message);
 internal sealed record UnlockRequest(string Path, string Password, string? KeyFilePath);
 internal sealed record CreateRequest(string Path, string Password, string? KeyFilePath, bool CreateKeyFile);
 internal sealed record ReloadRequest(string Password);
@@ -52,6 +58,9 @@ internal sealed record ErrorResponse(string Error, string Code);
 [JsonSourceGenerationOptions(JsonSerializerDefaults.Web, RespectNullableAnnotations = true, RespectRequiredConstructorParameters = true)]
 [JsonSerializable(typeof(InspectRequest))]
 [JsonSerializable(typeof(InspectResponse))]
+[JsonSerializable(typeof(KeyFileCheckResponse))]
+[JsonSerializable(typeof(KeyFilePathRequest))]
+[JsonSerializable(typeof(KeyFileRelocateResponse))]
 [JsonSerializable(typeof(UnlockRequest))]
 [JsonSerializable(typeof(CreateRequest))]
 [JsonSerializable(typeof(ReloadRequest))]

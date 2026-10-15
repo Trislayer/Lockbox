@@ -119,6 +119,8 @@ IResult Message(string text) => Results.Json(new MessageResponse(text), UiJson.D
 
 api.MapGet("/state", State);
 api.MapPost("/inspect", (InspectRequest r) => Results.Json(host.Inspect(r.Path), UiJson.Default.InspectResponse));
+api.MapPost("/keyfile/check", (KeyFilePathRequest r) => Results.Json(host.CheckKeyFile(r.Path), UiJson.Default.KeyFileCheckResponse));
+api.MapPost("/keyfile/relocate", (KeyFilePathRequest r) => Results.Json(host.RelocateKeyFile(r.Path), UiJson.Default.KeyFileRelocateResponse));
 api.MapPost("/unlock", (UnlockRequest r) => { host.Unlock(r); return State(); });
 api.MapPost("/create", (CreateRequest r) =>
 {

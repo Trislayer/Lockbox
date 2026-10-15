@@ -304,8 +304,9 @@ internal sealed class Shell(VaultSession vault, byte[]? keyFileDigest)
 
         var keyFile = _keyFileDigest;
         if (options.Has("--no-keyfile")) keyFile = null;
-        else if (options.Value("--create-keyfile") is { } create)
+        else if (options.Value("--create-keyfile") is { } createOption)
         {
+            var create = KeyFile.WithExtension(createOption);
             keyFile = KeyFile.Create(create);
             Console.WriteLine($"Created key file {Path.GetFullPath(create)} - keep it off the cloud, and back it up.");
         }

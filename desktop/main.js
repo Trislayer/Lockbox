@@ -8,6 +8,7 @@
 
 const { app, BrowserWindow, Menu, dialog, ipcMain, session } = require("electron");
 const { spawn } = require("node:child_process");
+const fs = require("node:fs");
 const path = require("node:path");
 const readline = require("node:readline");
 const { serverExecutable } = require("./server-path");
@@ -93,34 +94,31 @@ function openWindow(url) {
   win.loadURL(url);
 }
 
-const FILTERS = {
-  vault: [{ name: "Lockbox vault", extensions: ["lbx"] }, { name: "All files", extensions: ["*"] }],
-  // Any file up to 1 MiB works as a key file, so an existing one may have any name.
-  keyfile: [{ name: "Key file", extensions: ["lbxkey"] }, { name: "All files", extensions: ["*"] }],
-};
+// "Lockbox Keys" in the home folder, owner-only: see KeyFolder.cs in Lockbox.Core.
+const KEY_FOLDER = path.join(app.getPath("home"), "Lockbox Keys");
 
 /** A native open or save dialog for one of the page's path fields; resolves to the chosen path or null. */
 async function pickPath(event, request) {
   if (!win || origin === null || new URL(event.senderFrame.url).origin !== origin) return null;
-  const kind = request?.kind === "keyfile" ? "keyfile" : "vault";
-  const filters = FILTERS[kind];
+  const keyFile = request?.kind === "keyfile";
   if (request?.save === true) {
-    // A key file starts in the home folder, not Documents: Documents is often synced to the
+    // A new key file goes in Lockbox Keys, not Documents: Documents is often synced to the
     // cloud (iCloud on macOS, OneDrive on Windows), which would put it beside the vault.
-    const defaultPath = kind === "vault"
-      ? path.join(app.getPath("documents"), "vault.lbx")
-      : path.join(app.getPath("home"), "vault.lbxkey");
+    if (keyFile) fs.mkdirSync(KEY_FOLDER, { recursive: true, mode: 0o700 });
     const result = await dialog.showSaveDialog(win, {
-      title: kind === "vault" ? "New vault file" : "New key file",
-      defaultPath,
-      filters: filters.slice(0, 1),
+      title: keyFile ? "New key file" : "New vault file",
+      defaultPath: keyFile ? path.join(KEY_FOLDER, "vault.lbxkey") : path.join(app.getPath("documents"), "vault.lbx"),
+      filters: [keyFile ? { name: "Key file", extensions: ["lbxkey"] } : { name: "Lockbox vault", extensions: ["lbx"] }],
       properties: ["createDirectory", "showOverwriteConfirmation"],
     });
     return result.canceled ? null : result.filePath ?? null;
   }
+  // No filter for an existing key file: any file up to 1 MiB works as one, with any name or
+  // none (key files made before .lbxkey was added automatically have no extension).
   const result = await dialog.showOpenDialog(win, {
-    title: kind === "vault" ? "Open vault" : "Choose key file",
-    filters,
+    title: keyFile ? "Choose key file" : "Open vault",
+    defaultPath: keyFile && fs.existsSync(KEY_FOLDER) ? KEY_FOLDER : undefined,
+    filters: keyFile ? [] : [{ name: "Lockbox vault", extensions: ["lbx"] }, { name: "All files", extensions: ["*"] }],
     properties: ["openFile"],
   });
   return result.canceled ? null : result.filePaths[0] ?? null;

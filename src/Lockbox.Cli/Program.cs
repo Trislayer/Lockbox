@@ -59,8 +59,9 @@ static int New(Options options)
     if (File.Exists(path)) throw new IOException($"'{path}' already exists.");
 
     byte[]? keyFile = null;
-    if (options.Value("--create-keyfile") is { } newKeyPath)
+    if (options.Value("--create-keyfile") is { } newKeyOption)
     {
+        var newKeyPath = KeyFile.WithExtension(newKeyOption);
         keyFile = KeyFile.Create(newKeyPath);
         Console.WriteLine($"Created key file {Path.GetFullPath(newKeyPath)}.");
         Console.WriteLine("  Keep it OFF the cloud folder, and back it up: without it the vault cannot be opened.");
@@ -114,7 +115,7 @@ static int Open(Options options)
 
 static int CreateKeyFile(Options options)
 {
-    var path = options.Positional.FirstOrDefault() ?? throw new ArgumentException("lockbox keyfile <path>");
+    var path = KeyFile.WithExtension(options.Positional.FirstOrDefault() ?? throw new ArgumentException("lockbox keyfile <path>"));
     KeyFile.Create(path);
     Console.WriteLine($"Created {Path.GetFullPath(path)}. Keep it off the cloud folder, and back it up.");
     return 0;

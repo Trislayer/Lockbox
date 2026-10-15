@@ -35,12 +35,16 @@
           </span>
         </label>
         <p id="open-path-info" class="hint"></p>
-        <label id="open-keyfile-row" hidden>Key file
-          <span class="field-row path-row" id="open-keyfile-field">
-            <input id="open-keyfile" placeholder="C:\Users\you\vault.lbxkey" spellcheck="false" data-pick="keyfile">
-            <button type="button" class="browse" data-for="open-keyfile" hidden>Browse…</button>
-          </span>
-        </label>
+        <div id="open-keyfile-row" hidden>
+          <label>Key file
+            <span class="field-row path-row" id="open-keyfile-field">
+              <input id="open-keyfile" placeholder="C:\Users\you\vault.lbxkey" spellcheck="false" data-pick="keyfile">
+              <button type="button" class="browse" data-for="open-keyfile" hidden>Browse…</button>
+            </span>
+          </label>
+          <p class="hint keyfile-hint" id="open-keyfile-hint" hidden><span></span>
+            <button type="button" class="link" data-relocate="open-keyfile"></button></p>
+        </div>
         <label>Master password
           <input id="open-password" type="password" autocomplete="off" required>
         </label>
@@ -72,6 +76,8 @@
             <input id="create-keyfile" placeholder="C:\Users\you\vault.lbxkey" spellcheck="false" data-pick="keyfile">
             <button type="button" class="browse" data-for="create-keyfile" hidden>Browse…</button>
           </span>
+          <p class="hint keyfile-hint" id="create-keyfile-hint" hidden><span></span>
+            <button type="button" class="link" data-relocate="create-keyfile"></button></p>
           <p class="hint">A key file kept off the cloud makes a stolen vault file useless on its own. You must copy it to every device yourself, and back it up.</p>
         </fieldset>
         <button class="primary" type="submit" id="create-submit">Create vault</button>
@@ -181,6 +187,8 @@
           <input id="p-keyfile" placeholder="C:\Users\you\vault.lbxkey" spellcheck="false" data-pick="keyfile">
           <button type="button" class="browse" data-for="p-keyfile" hidden>Browse…</button>
         </span>
+        <p class="hint keyfile-hint" id="p-keyfile-hint" hidden><span></span>
+          <button type="button" class="link" data-relocate="p-keyfile"></button></p>
       </fieldset>
       <p id="passwd-error" class="error" role="alert"></p>
       <div class="entry-actions">

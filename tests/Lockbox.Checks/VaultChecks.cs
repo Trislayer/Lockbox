@@ -20,6 +20,7 @@ internal static class VaultChecks
             RoundTrip(dir);
             WrongCredentials(dir);
             KeyFiles(dir);
+            KeyFolderPlacement(dir);
             Tampering(dir);
             Conflicts(dir);
             Backups(dir);
@@ -101,6 +102,59 @@ internal static class VaultChecks
         var plain = NewPath(dir);
         VaultSession.Create(plain, "pw", null, Fast).Dispose();
         Checks.Throws<VaultFormatException>(() => VaultSession.Open(plain, "pw", digest), "a key file offered to a vault that has none is reported");
+    }
+
+    private static void KeyFolderPlacement(string dir)
+    {
+        Checks.Section("Vault - the Lockbox Keys folder");
+        Checks.Equal("k" + KeyFile.Extension, KeyFile.WithExtension("k"), "a new key file named without an extension gets " + KeyFile.Extension);
+        Checks.Equal("k.key", KeyFile.WithExtension("k.key"), "a new key file's own extension is kept");
+
+        var realHome = KeyFolder.Home;
+        KeyFolder.Home = Path.Combine(dir, "home");
+        try
+        {
+            var home = KeyFolder.Home;
+            Checks.Is(KeyFolder.Where(Path.Combine(home, "Downloads", "k"))?.Kind == PlaceKind.Downloads, "a key file in Downloads is flagged");
+            Checks.Is(KeyFolder.Where(Path.Combine(home, "Desktop", "x", "k"))?.Kind == PlaceKind.Desktop, "one on the Desktop is flagged");
+            Checks.Is(KeyFolder.Where(Path.Combine(home, "Library", "Mobile Documents", "k"))?.Kind == PlaceKind.Cloud, "one in iCloud Drive is flagged as cloud");
+            Checks.Is(KeyFolder.Where(Path.Combine(dir, "G", "My Drive", "k"))?.Kind == PlaceKind.Cloud, "one in a Google Drive 'My Drive' is flagged as cloud");
+            Checks.Is(KeyFolder.Where(Path.Combine(home, "Downloadsfoo", "k")) is null, "a folder merely named like Downloads is not");
+            Checks.Is(KeyFolder.Where(Path.Combine(KeyFolder.FolderPath, "k")) is null, "one already in Lockbox Keys is not");
+
+            var downloads = Path.Combine(home, "Downloads");
+            Directory.CreateDirectory(downloads);
+            var source = Path.Combine(downloads, "vault" + KeyFile.Extension);
+            var digest = KeyFile.Create(source);
+            var moved = KeyFolder.MoveIn(source);
+            Checks.Equal(Path.Combine(KeyFolder.FolderPath, "vault" + KeyFile.Extension), moved, "moving a key file puts it in Lockbox Keys under its own name");
+            Checks.Is(!File.Exists(source), "the original is gone after the move");
+            Checks.Is(digest.AsSpan().SequenceEqual(KeyFile.LoadDigest(moved)), "the moved key file has the same digest");
+            Checks.Equal(moved, KeyFolder.MoveIn(moved), "moving one already there leaves it alone");
+
+            var second = Path.Combine(downloads, "vault" + KeyFile.Extension);
+            KeyFile.Create(second);
+            Checks.Equal(Path.Combine(KeyFolder.FolderPath, "vault (2)" + KeyFile.Extension), KeyFolder.MoveIn(second), "a second one with the same name never overwrites the first");
+            Checks.Is(digest.AsSpan().SequenceEqual(KeyFile.LoadDigest(moved)), "the first one is unchanged");
+            Checks.Equal(Path.Combine(KeyFolder.FolderPath, "vault (3)" + KeyFile.Extension), KeyFolder.PlaceFor("vault"), "a new key file is placed under a free name, with the extension");
+
+            Checks.Throws<FileNotFoundException>(() => KeyFolder.MoveIn(Path.Combine(downloads, "none")), "moving a missing key file is refused");
+            var big = Path.Combine(downloads, "big.bin");
+            File.WriteAllBytes(big, new byte[KeyFile.MaxSize + 1]);
+            Checks.Throws<InvalidDataException>(() => KeyFolder.MoveIn(big), "a file too big to be a key file is not moved");
+            Checks.Is(File.Exists(big), "and stays where it was");
+
+            if (!OperatingSystem.IsWindows())
+            {
+                const UnixFileMode ownerOnly = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+                Checks.Equal((ownerOnly | UnixFileMode.UserExecute).ToString(), File.GetUnixFileMode(KeyFolder.FolderPath).ToString(), "Lockbox Keys is 0700");
+                Checks.Equal(ownerOnly.ToString(), File.GetUnixFileMode(moved).ToString(), "a moved key file is 0600");
+            }
+        }
+        finally
+        {
+            KeyFolder.Home = realHome;
+        }
     }
 
     private static void Tampering(string dir)

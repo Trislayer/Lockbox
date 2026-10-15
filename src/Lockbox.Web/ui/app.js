@@ -157,8 +157,9 @@ async function inspectPath() {
       $("open-keyfile-row").hidden = true;
       return;
     }
-    info.textContent = result.kdf + (result.requiresKeyFile ? " + key file" : "");
+    info.textContent = result.kdf + (result.requiresKeyFile ? " + key file" : "") + (result.warning ? ". " + result.warning : "");
     $("open-keyfile-row").hidden = !result.requiresKeyFile;
+    if (result.requiresKeyFile) await checkKeyFile($("open-keyfile"));
   } catch (e) {
     info.textContent = e.message;
   }
@@ -417,6 +418,7 @@ function openInfo() {
   $("i-count").textContent = `${s.entryCount}${s.dirty ? " (unsaved changes)" : ""}`;
   $("i-backups").textContent = `${s.backupCount} in ${s.backupDirectory}`;
   for (const id of ["p-current", "p-new", "p-confirm", "p-keyfile"]) $(id).value = "";
+  $("p-keyfile-hint").hidden = true;
   $("passwd-error").textContent = "";
   $("info-dialog").showModal();
 }
@@ -468,9 +470,58 @@ function setPath(input, path) {
   input.dispatchEvent(new Event("input", { bubbles: true }));
 }
 
+// ---- where key files live ----------------------------------------------------------------
+
+const KEY_FILE_FIELDS = ["open-keyfile", "create-keyfile", "p-keyfile"];
+
+/** "create" when the field names a key file about to be made, else "use". */
+function keyFileMode(input) {
+  if (input.id === "create-keyfile") return radioValue("create-kf") === "create" ? "create" : "use";
+  if (input.id === "p-keyfile") return radioValue("p-kf") === "create" ? "create" : "use";
+  return "use";
+}
+
+/** Under a key file field: a warning and a way out when it is in Downloads, Desktop, Documents or a cloud folder. */
+async function checkKeyFile(input) {
+  const hint = $(`${input.id}-hint`);
+  const text = hint.querySelector("span");
+  const button = hint.querySelector("button");
+  const path = input.value.trim();
+  if (!path || $(`${input.id}-field`).hidden) { hint.hidden = true; return; }
+  const result = await api("POST", "/keyfile/check", { path });
+  if (input.value.trim() !== path) return; // changed while we asked
+  const note = input.dataset.note;
+  delete input.dataset.note;
+  if (result.warning && (result.exists || keyFileMode(input) === "create")) {
+    text.textContent = result.warning + " ";
+    button.textContent = result.exists ? "Move it to Lockbox Keys in your home folder" : "Create it in Lockbox Keys in your home folder instead";
+    button.hidden = false;
+    hint.hidden = false;
+  } else if (note) {
+    text.textContent = note;
+    button.hidden = true;
+    hint.hidden = false;
+  } else {
+    hint.hidden = true;
+  }
+}
+
+async function relocateKeyFile(input) {
+  const result = await api("POST", "/keyfile/relocate", { path: input.value.trim() });
+  input.dataset.note = result.message;
+  setPath(input, result.path);
+}
+
 function wirePathFields() {
   // A file dropped anywhere else would otherwise be opened in place of the page.
   for (const type of ["dragover", "drop"]) document.addEventListener(type, (e) => e.preventDefault());
+
+  for (const id of KEY_FILE_FIELDS) {
+    const input = $(id);
+    input.addEventListener("change", () => checkKeyFile(input).catch((err) => toast(err.message)));
+    document.querySelector(`button[data-relocate="${id}"]`).addEventListener("click", () =>
+      relocateKeyFile(input).catch((err) => toast(err.message)));
+  }
 
   for (const input of document.querySelectorAll("input[data-pick]")) {
     const button = document.querySelector(`button.browse[data-for="${input.id}"]`);
@@ -512,9 +563,15 @@ document.addEventListener("DOMContentLoaded", async () => {
   on("open-path", "change", inspectPath);
   on("create-suggest", "click", suggest);
   document.querySelectorAll('input[name="create-kf"]').forEach((r) =>
-    r.addEventListener("change", () => { $("create-keyfile-field").hidden = radioValue("create-kf") === "none"; }));
+    r.addEventListener("change", () => {
+      $("create-keyfile-field").hidden = radioValue("create-kf") === "none";
+      checkKeyFile($("create-keyfile")).catch((err) => toast(err.message));
+    }));
   document.querySelectorAll('input[name="p-kf"]').forEach((r) =>
-    r.addEventListener("change", () => { $("p-keyfile-field").hidden = !["use", "create"].includes(radioValue("p-kf")); }));
+    r.addEventListener("change", () => {
+      $("p-keyfile-field").hidden = !["use", "create"].includes(radioValue("p-kf"));
+      checkKeyFile($("p-keyfile")).catch((err) => toast(err.message));
+    }));
 
   on("open-form", "submit", async (e) => {
     e.preventDefault();

@@ -77,7 +77,10 @@ Windows and Linux runners for every push, and attaches them to a release for `v*
   Python's hashlib in `Lockbox.Checks`. They are the only crypto not taken from .NET itself:
   a lint keeps them in `Crypto/` and lets only `VaultFormat.cs` call them.
 - **Key file (optional):** its SHA-256 is mixed in with HKDF-SHA256. Keep it off the cloud
-  and back it up; without it the vault cannot be opened.
+  and back it up; without it the vault cannot be opened. Any file up to 1 MiB works; new ones
+  get `.lbxkey` if the name has no extension. The UI flags a key file in Downloads, on the
+  Desktop, in Documents or a cloud folder, and offers to move it to `~/Lockbox Keys`
+  (owner-only, not synced): it copies, compares, and only then deletes the original.
 - **Encryption:** a random 256-bit data key, wrapped by the password-derived key with
   AES-256-GCM; the entries are AES-256-GCM under the data key with a fresh nonce on every
   save. Every header byte is authenticated. Layout: `src/Lockbox.Core/Vault/VaultFormat.cs`.

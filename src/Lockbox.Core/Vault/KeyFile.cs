@@ -11,6 +11,12 @@ public static class KeyFile
     public const int MaxSize = 1024 * 1024;
     public const string Extension = ".lbxkey";
 
+    /// <summary>
+    /// The path for a new key file: <see cref="Extension"/> is added when the name has none, so
+    /// the file is recognisable and the file dialogs list it.
+    /// </summary>
+    public static string WithExtension(string path) => Path.HasExtension(path) ? path : path + Extension;
+
     /// <summary>Write 64 random bytes to a new owner-only file (never overwrites) and return its digest.</summary>
     public static byte[] Create(string path)
     {
