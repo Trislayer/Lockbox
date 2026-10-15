@@ -1,8 +1,10 @@
 # Build and check Lockbox on each OS it ships for. Native AOT does not cross-compile between
 # operating systems, so every platform's binaries are built on that platform's runner.
 #
-# Every push: Lockbox.Checks, the CLI and lockbox-ui (native), and the desktop app (Electron),
-# uploaded as one artifact per platform. A pushed v* tag also attaches them to a GitHub release.
+# Runs only when asked - never on a commit or pull request: start it by hand (Actions > Build >
+# Run workflow, or `gh workflow run build.yml`), or push a v* tag to build a release.
+# Builds Lockbox.Checks, the CLI and lockbox-ui (native), and the desktop app (Electron),
+# uploaded as one artifact per platform; a v* tag also attaches them to a GitHub release.
 #
 # Actions are pinned to full commit SHAs (tag in the comment) so a moved tag cannot change
 # what runs here.
@@ -11,9 +13,7 @@ name: Build
 
 on:
   push:
-    branches: ["**"]
     tags: ["v*"]
-  pull_request:
   workflow_dispatch:
 
 permissions:

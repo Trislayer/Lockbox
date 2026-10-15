@@ -70,7 +70,9 @@ right-click > Open the first time. Electron versions are pinned exactly; update 
 Chromium security fixes.
 
 CI (`.github/workflows/build.yml`) runs the checks and builds all of the above on macOS,
-Windows and Linux runners for every push, and attaches them to a release for `v*` tags.
+Windows and Linux runners. It never runs on a commit: start it by hand (`gh workflow run
+build.yml`, or Actions > Build > Run workflow), or push a `v*` tag, which also attaches the
+builds to a release.
 
 ## How the file is protected
 
