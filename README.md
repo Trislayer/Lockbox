@@ -52,14 +52,18 @@ says `'vswhere.exe' is not recognized`, add `C:\Program Files (x86)\Microsoft Vi
 Studio\Installer` to `PATH`. Publishing downloads the SDK's own AOT compiler and runtime
 packs - toolchain, not dependencies; nothing third-party is linked in.
 
-Desktop app (Node 24+), after publishing `lockbox-ui` for this machine into `publish/<rid>`:
+Desktop app (Node 24+), in one command from any folder:
 
 ```text
-cd desktop
-npm ci
-npm start       # run from source
-npm run dist    # package: .dmg/.zip (macOS), setup .exe (Windows), AppImage (Linux) in desktop/dist
+./build-app.sh            # macOS / Linux  (build-app.cmd on Windows)
+./build-app.sh --open     # ...and open the app (macOS)
+./build-app.sh --skip-checks
 ```
+
+It runs the checks, publishes `lockbox-ui` for this machine into `publish/<rid>`, runs
+`npm ci` in `desktop/` when the packages are missing or out of date, and packages the app:
+.dmg/.zip and `Lockbox.app` (macOS), setup .exe (Windows) or AppImage (Linux) in
+`desktop/dist`. To run the desktop app from source instead: `cd desktop && npm start`.
 
 The macOS app is ad-hoc signed, not notarized: one downloaded from a release needs
 right-click > Open the first time. Electron versions are pinned exactly; update them for
