@@ -41,7 +41,15 @@ for (var i = 0; i < args.Length; i++)
 vaultArg ??= Environment.GetEnvironmentVariable("LOCKBOX_VAULT") is { Length: > 0 } v ? v : null;
 keyFileArg ??= Environment.GetEnvironmentVariable("LOCKBOX_KEYFILE") is { Length: > 0 } k ? k : null;
 
-var builder = WebApplication.CreateSlimBuilder(new WebApplicationOptions { Args = [] });
+// The content root defaults to the working directory, which is / under the desktop app, and
+// reloadable appsettings.json put a file watcher on it: on macOS that watched the whole disk,
+// so a change in iCloud Drive or the Photos library had this process asking for access to it.
+// Nothing here reads appsettings.json, so nothing is watched.
+var builder = WebApplication.CreateSlimBuilder(new WebApplicationOptions
+{
+    Args = ["--hostBuilder:reloadConfigOnChange=false"],
+    ContentRootPath = AppContext.BaseDirectory,
+});
 builder.WebHost.ConfigureKestrel(kestrel =>
 {
     kestrel.Listen(IPAddress.Loopback, port);

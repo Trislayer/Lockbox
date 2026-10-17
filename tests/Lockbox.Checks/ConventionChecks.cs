@@ -16,6 +16,7 @@ internal static class ConventionChecks
         NullableIsAnError(root);
         NoNullForgivingOperator(root);
         JsonRespectsNullableAnnotations(root);
+        WebHostWatchesNoFiles(root);
         NoPackageReferences(root);
         InHouseCryptoIsConfined(root);
         EveryCheckClassIsProvenAndRun(root);
@@ -232,6 +233,32 @@ internal static class ConventionChecks
         Checks.Is(hosts >= 1, $"found the web host's JSON options to check ({hosts}, expected at least 1)");
         Report(missing, "every JsonSerializerContext rejects nulls in non-nullable members",
             "add RespectNullableAnnotations = true and RespectRequiredConstructorParameters = true to its [JsonSourceGenerationOptions]");
+    }
+
+    /// <summary>
+    /// The web host watches no files. By default its content root is the working directory (/
+    /// under the desktop app) and appsettings.json reloads on change, which on macOS watched the
+    /// whole disk: a change in iCloud Drive or the Photos library made Lockbox ask for access.
+    /// </summary>
+    /// <remarks>Blind spot: a builder made through a helper method or with options built elsewhere.</remarks>
+    private static void WebHostWatchesNoFiles(string root)
+    {
+        Checks.Section("Conventions - the web host watches no files");
+        var hosts = 0;
+        var missing = new List<string>();
+        foreach (var file in Corpus(root, "*.cs", "src"))
+        {
+            var text = File.ReadAllText(file);
+            if (!text.Contains("WebApplication.Create", StringComparison.Ordinal)) continue;
+            hosts++;
+            if (!text.Contains("\"--hostBuilder:reloadConfigOnChange=false\"", StringComparison.Ordinal))
+                missing.Add($"{Relative(root, file)}: config reload is not turned off");
+            if (!text.Contains("ContentRootPath = AppContext.BaseDirectory", StringComparison.Ordinal))
+                missing.Add($"{Relative(root, file)}: the content root is not the app's own folder");
+        }
+        Checks.Is(hosts >= 1, $"found the web host to check ({hosts}, expected at least 1)");
+        Report(missing, "the web host turns off config reload and roots itself in its own folder",
+            "pass Args = [\"--hostBuilder:reloadConfigOnChange=false\"] and ContentRootPath = AppContext.BaseDirectory in its WebApplicationOptions");
     }
 
     /// <summary>Lockbox takes no NuGet dependencies; everything is the base class library or in-house.</summary>
