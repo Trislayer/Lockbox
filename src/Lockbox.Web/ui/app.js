@@ -62,6 +62,7 @@ function toast(text) {
 
 async function refreshState() {
   const state = await api("GET", "/state");
+  const firstLoad = ui.state === null;
   const wasUnlocked = ui.state?.unlocked;
   ui.state = state;
   if (!state.unlocked) {
@@ -72,7 +73,10 @@ async function refreshState() {
       location.reload();
       return;
     }
-    showLock(state.message ?? takeLockMessage());
+    // The status poll comes here every 15 s while locked. Building the lock screen again would
+    // empty the password being typed and move the focus, so only a new message is shown.
+    if (firstLoad) showLock(state.message ?? takeLockMessage());
+    else if (state.message) $("lock-message").textContent = state.message;
     return;
   }
   if (!wasUnlocked) await showMain();
